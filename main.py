@@ -3,6 +3,7 @@ import random
 import threading
 import requests
 import re
+import json
 from flask import Flask
 import discord
 from discord.ext import tasks
@@ -59,51 +60,74 @@ TITLE_DECORATIONS = [
     ("⚔️ ─── ", " ─── ⚔️")
 ]
 
+# قاموس ترجمة التصنيفات لضمان ظهور التخصصات بالعربي دائماً
+GENRES_TRANSLATION = {
+    "Action": "أكشن",
+    "Adventure": "مغامرات",
+    "Shooter": "تصويب / شوتر",
+    "RPG": "أدوار / آر بي جي",
+    "Role-Playing Games (RPG)": "أدوار / آر بي جي",
+    "Strategy": "إستراتيجية",
+    "Puzzle": "ألغاز",
+    "Racing": "سباقات",
+    "Sports": "رياضة",
+    "Fighting": "قتال",
+    "Simulation": "محاكاة",
+    "Arcade": "آركيد",
+    "Platformer": "منصات / بلاتفورمر",
+    "Massively Multiplayer": "جماعية ضخمة",
+    "Family": "عائلية",
+    "Educational": "تعليمية",
+    "Card": "بطاقات / كروت",
+    "Casual": "خفيفة / كاجوال"
+}
+
 def clean_text(text):
-    """تنظيف النص وإزالة أوسام HTML وأي أكواد غريبة"""
+    """تنظيف النص وإزالة أوسام HTML والأكواد"""
     if not text:
         return ""
     clean = re.sub(r'<[^>]+>', '', text)
-    clean = re.sub(r"'''[^']*'''", '', clean) # إزالة أكواد الأجهزة المكتوبة بشرطات
+    clean = re.sub(r"'''[^']*'''", '', clean)
     clean = " ".join(clean.split())
     return clean
 
 def translate_to_arabic(text):
-    """ترجمة ديناميكية حقيقية عبر MyMemory API تعمل 100% على السيرفرات"""
+    """ترجمة المباشرة للأنظمة بدون حظر باستخدام طلبات Google Web Endpoint"""
     cleaned = clean_text(text)
     if not cleaned or len(cleaned) < 5:
-        return "لا توجد نبذة متاحة لهذه اللعبة حالياً."
+        return "واحدة من الإصدارات الكلاسيكية المميزة على أجهزة البلايستيشن."
 
-    # أخذ أول 180 حرف لضمان نبذة ممتازة ومختصرة وترجمة سريعة
-    short_text = cleaned[:180]
+    # أخذ أول 140 حرف لضمان السرعة المطلقة
+    short_text = cleaned[:140]
 
     try:
-        url = f"https://api.mymemory.translated.net/get?q={requests.utils.quote(short_text)}&langpair=en|ar"
-        res = requests.get(url, timeout=8)
+        url = "https://translate.googleapis.com/translate_a/single"
+        params = {
+            "client": "gtx",
+            "sl": "en",
+            "tl": "ar",
+            "dt": "t",
+            "q": short_text
+        }
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        }
+        res = requests.get(url, params=params, headers=headers, timeout=5)
         if res.status_code == 200:
             data = res.json()
-            translated_text = data.get("responseData", {}).get("translatedText", "")
-            if translated_text and not translated_text.startswith("QUERY LENGTH LIMIT EXCEEDED"):
-                return translated_text + "..."
+            translated_sentences = [item[0] for item in data[0] if item and item[0]]
+            final_arabic = "".join(translated_sentences)
+            if final_arabic:
+                return final_arabic + "..."
     except Exception as e:
-        print(f"خطأ في محرك الترجمة: {e}")
+        print(f"خطأ في الترجمة: {e}")
 
-    # محاولة ثانوية عبر مجتمع الترجمة المفتوح
-    try:
-        url_alt = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ar&dt=t&q={requests.utils.quote(short_text)}"
-        res_alt = requests.get(url_alt, timeout=5)
-        if res_alt.status_code == 200:
-            parts = [item[0] for item in res_alt.json()[0] if item[0]]
-            return "".join(parts) + "..."
-    except:
-        pass
-
-    return short_text
+    return "لعبة كلاسيكية أسطورية تُعتبر من ألعاب الجيل الذهبي للبلايستيشن."
 
 def fetch_random_game():
     """جلب لعبة عشوائية حصرية لمنصات PS1 و PS2"""
     try:
-        page_num = random.randint(1, 50)
+        page_num = random.randint(1, 40)
         url = f"https://api.rawg.io/api/games?key={RAWG_API_KEY}&platforms={PLATFORMS}&page={page_num}&page_size=20"
         
         response = requests.get(url, timeout=10)
@@ -119,25 +143,28 @@ def fetch_random_game():
     return None
 
 def build_game_embed(game):
-    """بناء البطاقة وتصفية البيانات وإضافة الترجمة الحقيقية"""
+    """بناء البطاقة وتنظيف المطورين والترجمة"""
     title = game.get('name', 'لعبة غير معروفة')
     game_image = game.get('background_image', '')
     released = game.get('released', 'غير معروف')
     rating = game.get('rating', 'N/A')
     
-    # فلترة المنصات لتظهر البلايستيشن فقط
+    # تصفية أجهزة البلايستيشن القديمة فقط
     all_platforms = [p['platform']['name'] for p in game.get('platforms', [])]
     ps_platforms = [p for p in all_platforms if "PlayStation" in p or "PS" in p]
     platforms_str = ", ".join(ps_platforms) if ps_platforms else "PlayStation 1 / 2"
     
-    # تنظيف وتنسيق أسماء المطورين وإزالة الأجهزة الدخيلة
+    # المطورين
     raw_devs = [d['name'] for d in game.get('developers', [])]
     clean_devs = [clean_text(d) for d in raw_devs if not d.startswith("'''")]
     developers = ", ".join(filter(None, clean_devs)) or "غير معروف"
     
-    genres = ", ".join([g['name'] for g in game.get('genres', [])]) or "متنوع"
+    # التصنيف مع ترجمة التصنيفات تلقائياً بالعربي
+    raw_genres = [g['name'] for g in game.get('genres', [])]
+    translated_genres = [GENRES_TRANSLATION.get(g, g) for g in raw_genres]
+    genres_str = ", ".join(translated_genres) or "متنوع"
     
-    # جلب ترجمة النبذة الحقيقية الخاطفة
+    # جلب النبذة والترجمة
     raw_desc = game.get('description_raw') or game.get('description') or ''
     translated_desc = translate_to_arabic(raw_desc)
 
@@ -149,7 +176,7 @@ def build_game_embed(game):
 
     embed = discord.Embed(
         title=f"{prefix}{title.upper()}{suffix}",
-        description=f"📖 **نبذة مختصرة:**\n{translated_desc}\n\n──────────────────────────────",
+        description=f"📖 **نبذة عن اللعبة:**\n{translated_desc}\n\n──────────────────────────────",
         color=selected_color
     )
     
@@ -157,7 +184,7 @@ def build_game_embed(game):
     
     embed.add_field(name="🕹️ المنصات", value=f"`{platforms_str}`", inline=True)
     embed.add_field(name="🎬 المطور", value=f"`{developers}`", inline=True)
-    embed.add_field(name="🏷️ التصنيف", value=f"`{genres}`", inline=True)
+    embed.add_field(name="🏷️ التصنيف", value=f"`{genres_str}`", inline=True)
     embed.add_field(name="📅 سنة الإصدار", value=f"`{released}`", inline=True)
     embed.add_field(name="⭐ التقييم العام", value=f"**{rating} / 5** 🌟", inline=True)
     
