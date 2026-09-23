@@ -3,10 +3,10 @@ import random
 import threading
 import requests
 import re
-import urllib.parse
 from flask import Flask
 import discord
 from discord.ext import tasks
+from deep_translator import GoogleTranslator
 
 # --- سيرفر وهمي يبقي البوت متصلاً ---
 app = Flask('')
@@ -28,7 +28,7 @@ TOKEN = os.getenv('BOT_TOKEN')
 RAWG_API_KEY = os.getenv('RAWG_API_KEY')
 CHANNEL_ID = 1392242746718162997
 
-# 27 = PlayStation 1 | 15 = PlayStation 2 (حصر الألعاب للجيل الأول والثاني فقط)
+# 27 = PlayStation 1 | 15 = PlayStation 2
 PLATFORMS = "27,15"
 
 COLOR_PALETTE = [
@@ -63,23 +63,23 @@ TITLE_DECORATIONS = [
 def fetch_random_game():
     """جلب لعبة عشوائية حصرية لمنصات PS1 و PS2"""
     try:
-        page_num = random.randint(1, 60)
+        page_num = random.randint(1, 50)
         url = f"https://api.rawg.io/api/games?key={RAWG_API_KEY}&platforms={PLATFORMS}&page={page_num}&page_size=20"
         
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
         if response.status_code == 200:
             games = response.json().get('results', [])
             if games:
                 game = random.choice(games)
                 detail_url = f"https://api.rawg.io/api/games/{game['id']}?key={RAWG_API_KEY}"
-                detail_resp = requests.get(detail_url).json()
+                detail_resp = requests.get(detail_url, timeout=10).json()
                 return detail_resp
     except Exception as e:
         print(f"خطأ أثناء جلب البيانات: {e}")
     return None
 
 def clean_text(text):
-    """تنظيف النص وإزالة الأكواد الجانبية والأسطر"""
+    """تنظيف النص وإزالة أوسام HTML والأسطر الزائدة"""
     if not text:
         return ""
     clean = re.sub(r'<[^>]+>', '', text)
@@ -87,46 +87,30 @@ def clean_text(text):
     return clean
 
 def translate_to_arabic(text):
-    """ترجمة مختصرة ومضمونة جداً لضمان صدورها بالعربي"""
+    """ترجمة موثوقة ومباشرة باستخدام deep_translator"""
     cleaned = clean_text(text)
     if not cleaned or len(cleaned) < 5:
-        return "لا يوجد وصف متاح لهذه اللعبة حالياً."
+        return "واحدة من ألعاب البلايستيشن الكلاسيكية المميزة من العصر الذهبي."
 
-    # أخذ أول 120 حرف فقط ليكون الوصف مختصراً جداً ولتضمن الترجمة النجاح 100%
-    short_text = cleaned[:120] + "..."
+    # تقليم النص إلى 150 حرف للحصول على نبذة مركزة ومختصرة
+    short_text = cleaned[:150]
 
     try:
-        url = "https://translate.googleapis.com/translate_a/single"
-        params = {
-            "client": "gtx",
-            "sl": "en",
-            "tl": "ar",
-            "dt": "t",
-            "q": short_text
-        }
-        res = requests.get(url, params=params, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-            translated_parts = [item[0] for item in data[0] if item[0]]
-            final_arabic = "".join(translated_parts)
-            if final_arabic:
-                return final_arabic
+        translated = GoogleTranslator(source='auto', target='ar').translate(short_text)
+        if translated:
+            return translated + "..."
     except Exception as e:
-        print(f"خطأ في الترجمة: {e}")
+        print(f"خطأ في مكتبة الترجمة: {e}")
 
-    return cleaned
+    return "لعبة كلاسيكية شهيرة أُصدرت لأجهزة البلايستيشن الكلاسيكية."
 
 def build_game_embed(game):
-    """بناء البطاقة مع الصور المضمونة وتصفية الأجهزة"""
+    """بناء البطاقة بصورة مضمونة ونبذة مترجمة بالعربي"""
     title = game.get('name', 'لعبة غير معروفة')
-    
-    # الصورة الأساسية المضمونة المباشرة
     game_image = game.get('background_image', '')
-    
     released = game.get('released', 'غير معروف')
     rating = game.get('rating', 'N/A')
     
-    # فلترة أسماء أجهزة البلايستيشن القديمة فقط
     all_platforms = [p['platform']['name'] for p in game.get('platforms', [])]
     ps_platforms = [p for p in all_platforms if "PlayStation" in p or "PS" in p]
     platforms_str = ", ".join(ps_platforms) if ps_platforms else "PlayStation 1 / 2"
@@ -134,8 +118,7 @@ def build_game_embed(game):
     developers = ", ".join([d['name'] for d in game.get('developers', [])]) or "غير معروف"
     genres = ", ".join([g['name'] for g in game.get('genres', [])]) or "متنوع"
     
-    # جلب النبذة المختصرة المترجمة
-    raw_desc = game.get('description_raw') or game.get('description') or 'لا يوجد وصف متاح.'
+    raw_desc = game.get('description_raw') or game.get('description') or ''
     translated_desc = translate_to_arabic(raw_desc)
 
     selected_color = random.choice(COLOR_PALETTE)
@@ -172,7 +155,6 @@ client = discord.Client(intents=intents)
 async def on_ready():
     print(f'✅ البوت متصل باسم: {client.user}')
     
-    # إرسال تجريبي فور التشغيل للتأكد
     channel = client.get_channel(CHANNEL_ID)
     if channel:
         game_data = fetch_random_game()
