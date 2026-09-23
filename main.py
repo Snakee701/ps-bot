@@ -130,7 +130,7 @@ async def on_ready():
     if not send_daily_game.is_running():
         send_daily_game.start()
 
-@tasks.loop(hours=24)
+@tasks.loop(hours=1)
 async def send_daily_game():
     channel = client.get_channel(CHANNEL_ID)
     if channel:
