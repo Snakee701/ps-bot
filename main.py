@@ -20,7 +20,7 @@ def keep_alive():
 
 # --- كود البوت ---
 TOKEN = os.getenv('BOT_TOKEN')
-CHANNEL_ID = 1552353677031776257
+CHANNEL_ID = 1392242746718162997
 
 EMBEDS_DATABASE = [
     {
