@@ -1,7 +1,9 @@
+import os
 import discord
 from discord.ext import tasks
 
-TOKEN = 'MTU1MjM1Njg3MzI0MjU1MDMyNA.GetEvd.tK1-TBOc3ndm1RyqjZ7Wje8-_dd28D-DDYUQyI'
+# يقرأ التوكن بأمان من متغيرات البيئة في Render
+TOKEN = os.getenv('BOT_TOKEN')
 CHANNEL_ID = 1552353677031776257
 
 EMBEDS_DATABASE = [
