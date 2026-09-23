@@ -1,7 +1,7 @@
 import discord
 from discord.ext import tasks
 
-TOKEN = 'MTU1MjM0OTA1NDMxMzE3NzE0OQ.G7lUd4.KaXvw4p-dCRKrmXPk9Ctd0L2j0EtSzHbaa5jps'
+TOKEN = 'MTU1MjM1Njg3MzI0MjU1MDMyNA.GetEvd.tK1-TBOc3ndm1RyqjZ7Wje8-_dd28D-DDYUQyI'
 CHANNEL_ID = 1552353677031776257
 
 EMBEDS_DATABASE = [
