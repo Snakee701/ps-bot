@@ -2,7 +2,6 @@ import os
 import discord
 from discord.ext import tasks
 
-# يقرأ التوكن بأمان من متغيرات البيئة في Render
 TOKEN = os.getenv('BOT_TOKEN')
 CHANNEL_ID = 1552353677031776257
 
@@ -32,7 +31,18 @@ current_index = 0
 @client.event
 async def on_ready():
     print(f'تم تسجيل الدخول باسم: {client.user}')
+    # إرسال أول بطاقة فوراً عند التشغيل
+    await send_first_embed()
     send_scheduled_embed.start()
+
+async def send_first_embed():
+    global current_index
+    channel = client.get_channel(CHANNEL_ID)
+    if channel and current_index < len(EMBEDS_DATABASE):
+        data = EMBEDS_DATABASE[current_index]
+        embed = discord.Embed.from_dict(data)
+        await channel.send(embed=embed)
+        current_index += 1
 
 @tasks.loop(hours=24)
 async def send_scheduled_embed():
