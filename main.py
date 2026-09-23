@@ -3,10 +3,10 @@ import random
 import threading
 import requests
 import re
+import urllib.parse
 from flask import Flask
 import discord
 from discord.ext import tasks
-from deep_translator import GoogleTranslator
 
 # --- سيرفر وهمي يبقي البوت متصلاً ---
 app = Flask('')
@@ -48,7 +48,7 @@ COLOR_PALETTE = [
     0x00CED1, # أزرق سماوي مشع
 ]
 
-# --- عناوين بطاقات عشوائية ومتنوعة جداً ---
+# --- عناوين بطاقات عشوائية ومتنوعة ---
 HEADER_STYLES = [
     "🏛️ أرشيف الألعاب الكلاسيكية • CLASSIC ARCHIVE",
     "🎮 جوهرة من ألعاب الزمن الجميل • RETRO GEM",
@@ -86,7 +86,7 @@ TITLE_DECORATIONS = [
 ]
 
 def fetch_random_game():
-    """جلب لعبة عشوائية لمنصات PS2 أو PS3 مع كامل تفاصيلها"""
+    """جلب لعبة عشوائية لمنصات PS2 أو PS3"""
     try:
         page_num = random.randint(1, 100)
         url = f"https://api.rawg.io/api/games?key={RAWG_API_KEY}&platforms={PLATFORMS}&page={page_num}&page_size=20"
@@ -96,7 +96,6 @@ def fetch_random_game():
             games = response.json().get('results', [])
             if games:
                 game = random.choice(games)
-                # جلب التفاصيل الكاملة والعميقة للعبة
                 detail_url = f"https://api.rawg.io/api/games/{game['id']}?key={RAWG_API_KEY}"
                 detail_resp = requests.get(detail_url).json()
                 return detail_resp
@@ -113,16 +112,23 @@ def clean_html(text):
     return clean.strip()
 
 def translate_to_arabic(text):
-    """ترجمة الوصف تلقائياً للغة العربية بأسلوب سلس"""
+    """ترجمة النص للغة العربية عبر API جوجل المباشر والمضمون"""
     cleaned_text = clean_html(text)
     if not cleaned_text or len(cleaned_text) < 5:
         return "لا يوجد وصف متاح لهذه اللعبة حالياً في الأرشيف."
     
     try:
-        short_text = cleaned_text[:380] # ترجمة الجزء الأول الأهم لسرعة الاستجابة
-        translated = GoogleTranslator(source='auto', target='ar').translate(short_text)
-        if translated:
-            return translated
+        short_text = cleaned_text[:300]
+        encoded_text = urllib.parse.quote(short_text)
+        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ar&dt=t&q={encoded_text}"
+        
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            result = response.json()
+            translated_sentences = [item[0] for item in result[0] if item[0]]
+            translated_text = "".join(translated_sentences)
+            if translated_text:
+                return translated_text
     except Exception as e:
         print(f"خطأ في الترجمة: {e}")
     
@@ -140,7 +146,6 @@ def build_game_embed(game):
     ps_platforms = [p for p in all_platforms if "PlayStation" in p or "PS" in p]
     platforms_str = ", ".join(ps_platforms) if ps_platforms else ", ".join(all_platforms)
     
-    # المطورين والأنواع (Genres)
     developers = ", ".join([d['name'] for d in game.get('developers', [])]) or "غير معروف"
     genres = ", ".join([g['name'] for g in game.get('genres', [])]) or "متنوع"
     
@@ -162,21 +167,17 @@ def build_game_embed(game):
         color=selected_color
     )
     
-    # الجزء العلوي (Author)
     embed.set_author(name=selected_header, icon_url=selected_icon)
     
-    # الحقول والبيانات بالتنسيق الأسطوري
     embed.add_field(name="🕹️ المنصات", value=f"`{platforms_str}`", inline=True)
     embed.add_field(name="🎬 المطور", value=f"`{developers}`", inline=True)
     embed.add_field(name="🏷️ التصنيف", value=f"`{genres}`", inline=True)
     embed.add_field(name="📅 سنة الإصدار", value=f"`{released}`", inline=True)
     embed.add_field(name="⭐ التقييم العام", value=f"**{rating} / 5** 🌟", inline=True)
     
-    # صورة الخلفية
     if background_image:
         embed.set_image(url=background_image)
         
-    # تذييل البطاقة
     embed.set_footer(text=selected_footer)
     return embed
 
@@ -187,6 +188,17 @@ client = discord.Client(intents=intents)
 @client.event
 async def on_ready():
     print(f'✅ البوت الأسطوري جاهز ومتصل باسم: {client.user}')
+    
+    # إرسال تجريبي فور التشغيل لاختبار الترجمة والتصميم
+    channel = client.get_channel(CHANNEL_ID)
+    if channel:
+        print("⏳ جاري إرسال بطاقة تجريبية فورية...")
+        game_data = fetch_random_game()
+        if game_data:
+            embed = build_game_embed(game_data)
+            await channel.send(embed=embed)
+            print("✅ تم الإرسال التجريبي بنجاح!")
+            
     if not send_hourly_game.is_running():
         send_hourly_game.start()
 
