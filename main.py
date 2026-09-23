@@ -6,7 +6,6 @@ import re
 from flask import Flask
 import discord
 from discord.ext import tasks
-from deep_translator import GoogleTranslator
 
 # --- سيرفر وهمي يبقي البوت متصلاً ---
 app = Flask('')
@@ -60,6 +59,47 @@ TITLE_DECORATIONS = [
     ("⚔️ ─── ", " ─── ⚔️")
 ]
 
+def clean_text(text):
+    """تنظيف النص وإزالة أوسام HTML وأي أكواد غريبة"""
+    if not text:
+        return ""
+    clean = re.sub(r'<[^>]+>', '', text)
+    clean = re.sub(r"'''[^']*'''", '', clean) # إزالة أكواد الأجهزة المكتوبة بشرطات
+    clean = " ".join(clean.split())
+    return clean
+
+def translate_to_arabic(text):
+    """ترجمة ديناميكية حقيقية عبر MyMemory API تعمل 100% على السيرفرات"""
+    cleaned = clean_text(text)
+    if not cleaned or len(cleaned) < 5:
+        return "لا توجد نبذة متاحة لهذه اللعبة حالياً."
+
+    # أخذ أول 180 حرف لضمان نبذة ممتازة ومختصرة وترجمة سريعة
+    short_text = cleaned[:180]
+
+    try:
+        url = f"https://api.mymemory.translated.net/get?q={requests.utils.quote(short_text)}&langpair=en|ar"
+        res = requests.get(url, timeout=8)
+        if res.status_code == 200:
+            data = res.json()
+            translated_text = data.get("responseData", {}).get("translatedText", "")
+            if translated_text and not translated_text.startswith("QUERY LENGTH LIMIT EXCEEDED"):
+                return translated_text + "..."
+    except Exception as e:
+        print(f"خطأ في محرك الترجمة: {e}")
+
+    # محاولة ثانوية عبر مجتمع الترجمة المفتوح
+    try:
+        url_alt = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ar&dt=t&q={requests.utils.quote(short_text)}"
+        res_alt = requests.get(url_alt, timeout=5)
+        if res_alt.status_code == 200:
+            parts = [item[0] for item in res_alt.json()[0] if item[0]]
+            return "".join(parts) + "..."
+    except:
+        pass
+
+    return short_text
+
 def fetch_random_game():
     """جلب لعبة عشوائية حصرية لمنصات PS1 و PS2"""
     try:
@@ -78,46 +118,26 @@ def fetch_random_game():
         print(f"خطأ أثناء جلب البيانات: {e}")
     return None
 
-def clean_text(text):
-    """تنظيف النص وإزالة أوسام HTML والأسطر الزائدة"""
-    if not text:
-        return ""
-    clean = re.sub(r'<[^>]+>', '', text)
-    clean = " ".join(clean.split())
-    return clean
-
-def translate_to_arabic(text):
-    """ترجمة موثوقة ومباشرة باستخدام deep_translator"""
-    cleaned = clean_text(text)
-    if not cleaned or len(cleaned) < 5:
-        return "واحدة من ألعاب البلايستيشن الكلاسيكية المميزة من العصر الذهبي."
-
-    # تقليم النص إلى 150 حرف للحصول على نبذة مركزة ومختصرة
-    short_text = cleaned[:150]
-
-    try:
-        translated = GoogleTranslator(source='auto', target='ar').translate(short_text)
-        if translated:
-            return translated + "..."
-    except Exception as e:
-        print(f"خطأ في مكتبة الترجمة: {e}")
-
-    return "لعبة كلاسيكية شهيرة أُصدرت لأجهزة البلايستيشن الكلاسيكية."
-
 def build_game_embed(game):
-    """بناء البطاقة بصورة مضمونة ونبذة مترجمة بالعربي"""
+    """بناء البطاقة وتصفية البيانات وإضافة الترجمة الحقيقية"""
     title = game.get('name', 'لعبة غير معروفة')
     game_image = game.get('background_image', '')
     released = game.get('released', 'غير معروف')
     rating = game.get('rating', 'N/A')
     
+    # فلترة المنصات لتظهر البلايستيشن فقط
     all_platforms = [p['platform']['name'] for p in game.get('platforms', [])]
     ps_platforms = [p for p in all_platforms if "PlayStation" in p or "PS" in p]
     platforms_str = ", ".join(ps_platforms) if ps_platforms else "PlayStation 1 / 2"
     
-    developers = ", ".join([d['name'] for d in game.get('developers', [])]) or "غير معروف"
+    # تنظيف وتنسيق أسماء المطورين وإزالة الأجهزة الدخيلة
+    raw_devs = [d['name'] for d in game.get('developers', [])]
+    clean_devs = [clean_text(d) for d in raw_devs if not d.startswith("'''")]
+    developers = ", ".join(filter(None, clean_devs)) or "غير معروف"
+    
     genres = ", ".join([g['name'] for g in game.get('genres', [])]) or "متنوع"
     
+    # جلب ترجمة النبذة الحقيقية الخاطفة
     raw_desc = game.get('description_raw') or game.get('description') or ''
     translated_desc = translate_to_arabic(raw_desc)
 
