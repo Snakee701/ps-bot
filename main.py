@@ -28,7 +28,8 @@ TOKEN = os.getenv('BOT_TOKEN')
 RAWG_API_KEY = os.getenv('RAWG_API_KEY')
 CHANNEL_ID = 1392242746718162997
 
-PLATFORMS = "15,16"  # منصات PS2 (15) و PS3 (16)
+# 27 = PlayStation 1 | 15 = PlayStation 2 (حصر الألعاب للجيل الأول والثاني فقط)
+PLATFORMS = "27,15"
 
 COLOR_PALETTE = [
     0x8B0000, 0x00439C, 0x2E8B57, 0x4B0082, 
@@ -60,9 +61,9 @@ TITLE_DECORATIONS = [
 ]
 
 def fetch_random_game():
-    """جلب لعبة عشوائية لمنصات PS2 أو PS3"""
+    """جلب لعبة عشوائية حصرية لمنصات PS1 و PS2"""
     try:
-        page_num = random.randint(1, 80)
+        page_num = random.randint(1, 60)
         url = f"https://api.rawg.io/api/games?key={RAWG_API_KEY}&platforms={PLATFORMS}&page={page_num}&page_size=20"
         
         response = requests.get(url)
@@ -78,23 +79,21 @@ def fetch_random_game():
     return None
 
 def clean_text(text):
-    """تنظيف شامل للنص وإزالة الأكواد الجانبية"""
+    """تنظيف النص وإزالة الأكواد الجانبية والأسطر"""
     if not text:
         return ""
-    # إزالة HTML
     clean = re.sub(r'<[^>]+>', '', text)
-    # إزالة الأسطر الكثيرة والمسافات الزائدة
     clean = " ".join(clean.split())
     return clean
 
 def translate_to_arabic(text):
-    """ترجمة مضمونة وسريعة عبر Google Translate Direct API"""
+    """ترجمة مختصرة ومضمونة جداً لضمان صدورها بالعربي"""
     cleaned = clean_text(text)
     if not cleaned or len(cleaned) < 5:
         return "لا يوجد وصف متاح لهذه اللعبة حالياً."
 
-    # نأخذ أول 220 حرف فقط لضمان ألا يفشل الرابط مطلقاً
-    short_text = cleaned[:220]
+    # أخذ أول 120 حرف فقط ليكون الوصف مختصراً جداً ولتضمن الترجمة النجاح 100%
+    short_text = cleaned[:120] + "..."
 
     try:
         url = "https://translate.googleapis.com/translate_a/single"
@@ -118,23 +117,24 @@ def translate_to_arabic(text):
     return cleaned
 
 def build_game_embed(game):
-    """بناء البطاقة مع تفضيل صورة غلاف اللعبة الأصلي"""
+    """بناء البطاقة مع الصور المضمونة وتصفية الأجهزة"""
     title = game.get('name', 'لعبة غير معروفة')
     
-    # تفضيل غلاف اللعبة الأصلي (additional) ثم صورة الخلفية العادية
-    cover_image = game.get('background_image_additional') or game.get('background_image') or ''
+    # الصورة الأساسية المضمونة المباشرة
+    game_image = game.get('background_image', '')
     
     released = game.get('released', 'غير معروف')
     rating = game.get('rating', 'N/A')
     
+    # فلترة أسماء أجهزة البلايستيشن القديمة فقط
     all_platforms = [p['platform']['name'] for p in game.get('platforms', [])]
     ps_platforms = [p for p in all_platforms if "PlayStation" in p or "PS" in p]
-    platforms_str = ", ".join(ps_platforms) if ps_platforms else ", ".join(all_platforms)
+    platforms_str = ", ".join(ps_platforms) if ps_platforms else "PlayStation 1 / 2"
     
     developers = ", ".join([d['name'] for d in game.get('developers', [])]) or "غير معروف"
     genres = ", ".join([g['name'] for g in game.get('genres', [])]) or "متنوع"
     
-    # جلب النبذة وترجمتها
+    # جلب النبذة المختصرة المترجمة
     raw_desc = game.get('description_raw') or game.get('description') or 'لا يوجد وصف متاح.'
     translated_desc = translate_to_arabic(raw_desc)
 
@@ -146,7 +146,7 @@ def build_game_embed(game):
 
     embed = discord.Embed(
         title=f"{prefix}{title.upper()}{suffix}",
-        description=f"📖 **نبذة عن اللعبة:**\n{translated_desc}\n\n──────────────────────────────",
+        description=f"📖 **نبذة مختصرة:**\n{translated_desc}\n\n──────────────────────────────",
         color=selected_color
     )
     
@@ -158,8 +158,8 @@ def build_game_embed(game):
     embed.add_field(name="📅 سنة الإصدار", value=f"`{released}`", inline=True)
     embed.add_field(name="⭐ التقييم العام", value=f"**{rating} / 5** 🌟", inline=True)
     
-    if cover_image:
-        embed.set_image(url=cover_image)
+    if game_image:
+        embed.set_image(url=game_image)
         
     embed.set_footer(text=selected_footer)
     return embed
@@ -172,7 +172,7 @@ client = discord.Client(intents=intents)
 async def on_ready():
     print(f'✅ البوت متصل باسم: {client.user}')
     
-    # إرسال تجريبي فور التشغيل للتأكد من الترجمة والغلاف
+    # إرسال تجريبي فور التشغيل للتأكد
     channel = client.get_channel(CHANNEL_ID)
     if channel:
         game_data = fetch_random_game()
