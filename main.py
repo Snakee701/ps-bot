@@ -30,65 +30,39 @@ CHANNEL_ID = 1392242746718162997
 
 PLATFORMS = "15,16"  # منصات PS2 (15) و PS3 (16)
 
-# --- قائمة الألوان الأسطورية الشاملة (Hex Colors) ---
 COLOR_PALETTE = [
-    0x8B0000, # أحمر داكن عتيق (Resident Evil / DMC)
-    0x00439C, # أزرق بلايستيشن كلاسيكي (PlayStation Blue)
-    0x2E8B57, # أخضر عسكري (Metal Gear Solid)
-    0x4B0082, # بنفسجي غامق غامض (Silent Hill)
-    0xD4AF37, # ذهبي فاخر (God of War)
-    0xFF4500, # برتقالي ناري (GTA / Action)
-    0x2F4F4F, # رمادي زيتي داكن (Dark Fantasy)
-    0x1C1C1C, # أسود كلاسيكي فاخر (Black Edition)
-    0x708090, # فضي معدني (Cybernetic)
-    0x800000, # عنابي داكن (Classic Horror)
-    0x008080, # تركوازي داكن (Retro Arcade)
-    0xDAA520, # برونزي عتيق (Classic Treasures)
-    0x8A2BE2, # بنفسجي نيون (Neon Retro)
-    0x00CED1, # أزرق سماوي مشع
+    0x8B0000, 0x00439C, 0x2E8B57, 0x4B0082, 
+    0xD4AF37, 0xFF4500, 0x2F4F4F, 0x1C1C1C
 ]
 
-# --- عناوين بطاقات عشوائية ومتنوعة ---
 HEADER_STYLES = [
     "🏛️ أرشيف الألعاب الكلاسيكية • CLASSIC ARCHIVE",
     "🎮 جوهرة من ألعاب الزمن الجميل • RETRO GEM",
     "📜 سجلات بلايستيشن الخالدة • PLAYSTATION LEGENDS",
     "🕹️ استرجاع ذكريات الـ PlayStation • MEMORIES",
-    "🔥 تحفة فنية من الجيل الذهبي • GOLDEN ERA",
-    "📼 من طيات التاريخ والذكريات • NOSTALGIA",
-    "⚔️ أسطورة من أساطير PS2 & PS3 • LEGENDARY GAME",
-    "💿 من ذاكرة البلايستيشن الخالدة • DISC ARCHIVE",
+    "🔥 تحفة فنية من الجيل الذهبي • GOLDEN ERA"
 ]
 
-# --- أيقونات عشوائية أعلى البطاقة ---
 AUTHOR_ICONS = [
-    "https://cdn.discordapp.com/attachments/1382017672253800479/1552255596902744074/1.jpg",
-    "https://images.rawg.io/media/games/20a/20aa27a2c317978d11864143d1a836d3.jpg",
-    "https://images.rawg.io/media/games/d1a/d1a2e99ade53494c69e51e0074cf2113.jpg",
+    "https://cdn.discordapp.com/attachments/1382017672253800479/1552255596902744074/1.jpg"
 ]
 
-# --- عبارات ختامية عشوائية وحماسية (Footers) ---
 FOOTER_TEXTS = [
     "PLAYSTATION ARCHIVE • الذكريات لا تُمحى من الذاكرة",
     "GOLDEN ERA SYSTEM • من عصر العمالقة والجيل الذهبي",
-    "CLASSIC RETRO BOT • أرشيف البلايستيشن التلقائي",
-    "PS2 & PS3 VAULT • تحف وأساطير عالم الألعاب",
-    "LEGENDS NEVER DIE • ألعاب حُفرت في الوجدان",
+    "CLASSIC RETRO BOT • أرشيف البلايستيشن التلقائي"
 ]
 
-# --- زخارف وأشكال تحيط بالـ Title ---
 TITLE_DECORATIONS = [
     ("━━━ 🎮 ", " ━━━"),
     ("❖ ━━━━ [ ", " ] ━━━━ ❖"),
-    ("⚔️ ─── ", " ─── ⚔️"),
-    ("◄▒▒▒▒▒▒ ", " ▒▒▒▒▒▒►"),
-    ("✦ ════━ ", " ━════ ✦"),
+    ("⚔️ ─── ", " ─── ⚔️")
 ]
 
 def fetch_random_game():
     """جلب لعبة عشوائية لمنصات PS2 أو PS3"""
     try:
-        page_num = random.randint(1, 100)
+        page_num = random.randint(1, 80)
         url = f"https://api.rawg.io/api/games?key={RAWG_API_KEY}&platforms={PLATFORMS}&page={page_num}&page_size=20"
         
         response = requests.get(url)
@@ -103,45 +77,56 @@ def fetch_random_game():
         print(f"خطأ أثناء جلب البيانات: {e}")
     return None
 
-def clean_html(text):
-    """تنظيف وتصفية النصوص من أوسمة HTML والرموز التعبيرية المعقدة"""
+def clean_text(text):
+    """تنظيف شامل للنص وإزالة الأكواد الجانبية"""
     if not text:
         return ""
+    # إزالة HTML
     clean = re.sub(r'<[^>]+>', '', text)
-    clean = clean.replace('\r', ' ').replace('\n', ' ')
-    return clean.strip()
+    # إزالة الأسطر الكثيرة والمسافات الزائدة
+    clean = " ".join(clean.split())
+    return clean
 
 def translate_to_arabic(text):
-    """ترجمة النص للغة العربية عبر API جوجل المباشر والمضمون"""
-    cleaned_text = clean_html(text)
-    if not cleaned_text or len(cleaned_text) < 5:
-        return "لا يوجد وصف متاح لهذه اللعبة حالياً في الأرشيف."
-    
+    """ترجمة مضمونة وسريعة عبر Google Translate Direct API"""
+    cleaned = clean_text(text)
+    if not cleaned or len(cleaned) < 5:
+        return "لا يوجد وصف متاح لهذه اللعبة حالياً."
+
+    # نأخذ أول 220 حرف فقط لضمان ألا يفشل الرابط مطلقاً
+    short_text = cleaned[:220]
+
     try:
-        short_text = cleaned_text[:300]
-        encoded_text = urllib.parse.quote(short_text)
-        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ar&dt=t&q={encoded_text}"
-        
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            result = response.json()
-            translated_sentences = [item[0] for item in result[0] if item[0]]
-            translated_text = "".join(translated_sentences)
-            if translated_text:
-                return translated_text
+        url = "https://translate.googleapis.com/translate_a/single"
+        params = {
+            "client": "gtx",
+            "sl": "en",
+            "tl": "ar",
+            "dt": "t",
+            "q": short_text
+        }
+        res = requests.get(url, params=params, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            translated_parts = [item[0] for item in data[0] if item[0]]
+            final_arabic = "".join(translated_parts)
+            if final_arabic:
+                return final_arabic
     except Exception as e:
         print(f"خطأ في الترجمة: {e}")
-    
-    return cleaned_text
+
+    return cleaned
 
 def build_game_embed(game):
-    """بناء البطاقة وتطبيق العشوائية الفائقة في التصاميم والتنسيقات"""
+    """بناء البطاقة مع تفضيل صورة غلاف اللعبة الأصلي"""
     title = game.get('name', 'لعبة غير معروفة')
-    background_image = game.get('background_image', '')
+    
+    # تفضيل غلاف اللعبة الأصلي (additional) ثم صورة الخلفية العادية
+    cover_image = game.get('background_image_additional') or game.get('background_image') or ''
+    
     released = game.get('released', 'غير معروف')
     rating = game.get('rating', 'N/A')
     
-    # تصفية المنصات المخصصة للبلايستيشن فقط
     all_platforms = [p['platform']['name'] for p in game.get('platforms', [])]
     ps_platforms = [p for p in all_platforms if "PlayStation" in p or "PS" in p]
     platforms_str = ", ".join(ps_platforms) if ps_platforms else ", ".join(all_platforms)
@@ -149,21 +134,19 @@ def build_game_embed(game):
     developers = ", ".join([d['name'] for d in game.get('developers', [])]) or "غير معروف"
     genres = ", ".join([g['name'] for g in game.get('genres', [])]) or "متنوع"
     
-    # جلب الوصف وترجمته
+    # جلب النبذة وترجمتها
     raw_desc = game.get('description_raw') or game.get('description') or 'لا يوجد وصف متاح.'
     translated_desc = translate_to_arabic(raw_desc)
 
-    # اختيار عناصر التنسيق العشوائي
     selected_color = random.choice(COLOR_PALETTE)
     selected_header = random.choice(HEADER_STYLES)
     selected_icon = random.choice(AUTHOR_ICONS)
     selected_footer = random.choice(FOOTER_TEXTS)
     prefix, suffix = random.choice(TITLE_DECORATIONS)
 
-    # إنشاء بطاقة Embed
     embed = discord.Embed(
         title=f"{prefix}{title.upper()}{suffix}",
-        description=f"📖 **نبذة عن اللعبة:**\n```{translated_desc}```\n──────────────────────────────",
+        description=f"📖 **نبذة عن اللعبة:**\n{translated_desc}\n\n──────────────────────────────",
         color=selected_color
     )
     
@@ -175,34 +158,31 @@ def build_game_embed(game):
     embed.add_field(name="📅 سنة الإصدار", value=f"`{released}`", inline=True)
     embed.add_field(name="⭐ التقييم العام", value=f"**{rating} / 5** 🌟", inline=True)
     
-    if background_image:
-        embed.set_image(url=background_image)
+    if cover_image:
+        embed.set_image(url=cover_image)
         
     embed.set_footer(text=selected_footer)
     return embed
 
-# --- كود التشغيل الرئيسي للبوت ---
+# --- كود التشغيل ---
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
 @client.event
 async def on_ready():
-    print(f'✅ البوت الأسطوري جاهز ومتصل باسم: {client.user}')
+    print(f'✅ البوت متصل باسم: {client.user}')
     
-    # إرسال تجريبي فور التشغيل لاختبار الترجمة والتصميم
+    # إرسال تجريبي فور التشغيل للتأكد من الترجمة والغلاف
     channel = client.get_channel(CHANNEL_ID)
     if channel:
-        print("⏳ جاري إرسال بطاقة تجريبية فورية...")
         game_data = fetch_random_game()
         if game_data:
             embed = build_game_embed(game_data)
             await channel.send(embed=embed)
-            print("✅ تم الإرسال التجريبي بنجاح!")
             
     if not send_hourly_game.is_running():
         send_hourly_game.start()
 
-# --- حلقة إرسال اللعبة كل ساعة تلقائياً ---
 @tasks.loop(hours=1)
 async def send_hourly_game():
     channel = client.get_channel(CHANNEL_ID)
