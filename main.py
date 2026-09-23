@@ -3,7 +3,6 @@ import random
 import threading
 import requests
 import re
-import json
 from flask import Flask
 import discord
 from discord.ext import tasks
@@ -60,7 +59,6 @@ TITLE_DECORATIONS = [
     ("⚔️ ─── ", " ─── ⚔️")
 ]
 
-# قاموس ترجمة التصنيفات لضمان ظهور التخصصات بالعربي دائماً
 GENRES_TRANSLATION = {
     "Action": "أكشن",
     "Adventure": "مغامرات",
@@ -83,7 +81,7 @@ GENRES_TRANSLATION = {
 }
 
 def clean_text(text):
-    """تنظيف النص وإزالة أوسام HTML والأكواد"""
+    """تنظيف النص وإزالة أوسام HTML وأي أكواد غريبة"""
     if not text:
         return ""
     clean = re.sub(r'<[^>]+>', '', text)
@@ -91,38 +89,39 @@ def clean_text(text):
     clean = " ".join(clean.split())
     return clean
 
-def translate_to_arabic(text):
-    """ترجمة المباشرة للأنظمة بدون حظر باستخدام طلبات Google Web Endpoint"""
+def translate_description(text):
+    """حاول الترجمة عبر محركات متعددة، وفي حال الفشل يرجع النبذة الأصلية للعبة"""
     cleaned = clean_text(text)
-    if not cleaned or len(cleaned) < 5:
-        return "واحدة من الإصدارات الكلاسيكية المميزة على أجهزة البلايستيشن."
+    if not cleaned:
+        return "لا توجد نبذة متوفرة لهذه اللعبة."
 
-    # أخذ أول 140 حرف لضمان السرعة المطلقة
-    short_text = cleaned[:140]
+    short_text = cleaned[:200]
 
+    # المحاولة الأولى: MyMemory Translate
     try:
-        url = "https://translate.googleapis.com/translate_a/single"
-        params = {
-            "client": "gtx",
-            "sl": "en",
-            "tl": "ar",
-            "dt": "t",
-            "q": short_text
-        }
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-        }
-        res = requests.get(url, params=params, headers=headers, timeout=5)
+        url = f"https://api.mymemory.translated.net/get?q={requests.utils.quote(short_text)}&langpair=en|ar"
+        res = requests.get(url, timeout=5)
         if res.status_code == 200:
-            data = res.json()
-            translated_sentences = [item[0] for item in data[0] if item and item[0]]
-            final_arabic = "".join(translated_sentences)
-            if final_arabic:
-                return final_arabic + "..."
+            translated = res.json().get("responseData", {}).get("translatedText", "")
+            if translated and "MYMEMORY WARNING" not in translated and "QUERY LENGTH" not in translated:
+                return translated + "..."
     except Exception as e:
-        print(f"خطأ في الترجمة: {e}")
+        print(f"MyMemory error: {e}")
 
-    return "لعبة كلاسيكية أسطورية تُعتبر من ألعاب الجيل الذهبي للبلايستيشن."
+    # المحاولة الثانية: LibreTranslate
+    try:
+        url_lt = "https://libretranslate.de/translate"
+        payload = {"q": short_text, "source": "en", "target": "ar", "format": "text"}
+        res_lt = requests.post(url_lt, json=payload, timeout=5)
+        if res_lt.status_code == 200:
+            translated = res_lt.json().get("translatedText", "")
+            if translated:
+                return translated + "..."
+    except Exception as e:
+        print(f"LibreTranslate error: {e}")
+
+    # إذا فشلت كل المحركات، يرجع النبذة الإنجليزية الأصلية الخاصة باللعبة نفسها بدلاً من الجمل المكررة!
+    return short_text + "..."
 
 def fetch_random_game():
     """جلب لعبة عشوائية حصرية لمنصات PS1 و PS2"""
@@ -143,13 +142,13 @@ def fetch_random_game():
     return None
 
 def build_game_embed(game):
-    """بناء البطاقة وتنظيف المطورين والترجمة"""
+    """بناء البطاقة وتصفية البيانات"""
     title = game.get('name', 'لعبة غير معروفة')
     game_image = game.get('background_image', '')
     released = game.get('released', 'غير معروف')
     rating = game.get('rating', 'N/A')
     
-    # تصفية أجهزة البلايستيشن القديمة فقط
+    # تصفية أجهزة البلايستيشن
     all_platforms = [p['platform']['name'] for p in game.get('platforms', [])]
     ps_platforms = [p for p in all_platforms if "PlayStation" in p or "PS" in p]
     platforms_str = ", ".join(ps_platforms) if ps_platforms else "PlayStation 1 / 2"
@@ -159,14 +158,14 @@ def build_game_embed(game):
     clean_devs = [clean_text(d) for d in raw_devs if not d.startswith("'''")]
     developers = ", ".join(filter(None, clean_devs)) or "غير معروف"
     
-    # التصنيف مع ترجمة التصنيفات تلقائياً بالعربي
+    # التصنيف
     raw_genres = [g['name'] for g in game.get('genres', [])]
     translated_genres = [GENRES_TRANSLATION.get(g, g) for g in raw_genres]
     genres_str = ", ".join(translated_genres) or "متنوع"
     
-    # جلب النبذة والترجمة
+    # جلب النبذة الخاصة باللعبة نفسها
     raw_desc = game.get('description_raw') or game.get('description') or ''
-    translated_desc = translate_to_arabic(raw_desc)
+    game_desc = translate_description(raw_desc)
 
     selected_color = random.choice(COLOR_PALETTE)
     selected_header = random.choice(HEADER_STYLES)
@@ -176,7 +175,7 @@ def build_game_embed(game):
 
     embed = discord.Embed(
         title=f"{prefix}{title.upper()}{suffix}",
-        description=f"📖 **نبذة عن اللعبة:**\n{translated_desc}\n\n──────────────────────────────",
+        description=f"📖 **نبذة عن اللعبة:**\n{game_desc}\n\n──────────────────────────────",
         color=selected_color
     )
     
