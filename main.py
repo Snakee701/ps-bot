@@ -1,7 +1,24 @@
 import os
+import threading
+from flask import Flask
 import discord
 from discord.ext import tasks
 
+# سيرفر وهمي يبقي البوت شغال في Render
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is alive!"
+
+def run():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = threading.Thread(target=run)
+    t.start()
+
+# --- كود البوت ---
 TOKEN = os.getenv('BOT_TOKEN')
 CHANNEL_ID = 1552353677031776257
 
@@ -31,9 +48,9 @@ current_index = 0
 @client.event
 async def on_ready():
     print(f'تم تسجيل الدخول باسم: {client.user}')
-    # إرسال أول بطاقة فوراً عند التشغيل
     await send_first_embed()
-    send_scheduled_embed.start()
+    if not send_scheduled_embed.is_running():
+        send_scheduled_embed.start()
 
 async def send_first_embed():
     global current_index
@@ -54,4 +71,6 @@ async def send_scheduled_embed():
         await channel.send(embed=embed)
         current_index += 1
 
+# تشغيل سيرفر الويب والبوت معاً
+keep_alive()
 client.run(TOKEN)
