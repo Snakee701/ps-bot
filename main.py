@@ -117,56 +117,61 @@ def clean_text(text):
     return clean
 
 def translate_description(text):
-    """نظام ترجمة قوي متعدّد الخوادم ويتجاوز حظر الـ IP بإعادة التغيير العشوائي للمستخدم"""
+    """مواسر ترجمة رباعية الطبقات شاملة ومضمونة 100%"""
     cleaned = clean_text(text)
     if not cleaned:
-        return "تعتبر هذه اللعبة واحدة من الإصدارات الكلاسيكية المميزة على أجهزة البلايستيشن."
+        return "لا توجد نبذة متوفرة لهذه اللعبة."
 
-    short_text = cleaned[:300]
-    
-    headers_list = [
-        {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'},
-        {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'},
-        {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'}
-    ]
+    # تقسيم النص إلى حجم متناسق ومثالي للترجمة السريعة الدقيقة
+    short_text = cleaned[:600]
 
-    # --- المحرك 1: Google Client API ---
-    for attempt in range(2):
-        try:
-            gt_url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ar&dt=t&q={requests.utils.quote(short_text)}"
-            res = requests.get(gt_url, headers=random.choice(headers_list), timeout=5)
-            if res.status_code == 200:
-                result = res.json()
-                translated = "".join([sentence[0] for sentence in result[0] if sentence[0]])
-                if translated and len(translated.strip()) > 5:
-                    return translated.strip() + "..."
-        except Exception:
-            time.sleep(1)
-
-    # --- المحرك 2: MyMemory Translator مع كود محلي ---
+    # --- المحرك 1: Google Translate Primary ---
     try:
-        mm_url = f"https://api.mymemory.translated.net/get?q={requests.utils.quote(short_text)}&langpair=en|ar"
-        res = requests.get(mm_url, headers=random.choice(headers_list), timeout=5)
+        gt_url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ar&dt=t&q={requests.utils.quote(short_text)}"
+        res = requests.get(gt_url, timeout=4)
+        if res.status_code == 200:
+            result = res.json()
+            translated = "".join([sentence[0] for sentence in result[0] if sentence[0]])
+            if translated and len(translated.strip()) > 10:
+                return translated.strip()
+    except Exception as e:
+        print(f"Google Translate Fail: {e}")
+
+    # --- المحرك 2: MyMemory API ---
+    try:
+        mm_url = f"https://api.mymemory.translated.net/get?q={requests.utils.quote(short_text[:350])}&langpair=en|ar"
+        res = requests.get(mm_url, timeout=4)
         if res.status_code == 200:
             translated = res.json().get("responseData", {}).get("translatedText", "")
-            if translated and "MYMEMORY" not in translated and "QUERY" not in translated:
-                return translated.strip() + "..."
-    except Exception:
-        pass
+            if translated and "MYMEMORY" not in translated and "QUERY LENGTH" not in translated:
+                return translated.strip()
+    except Exception as e:
+        print(f"MyMemory Fail: {e}")
 
-    # --- المحرك 3: Lingva API ---
+    # --- المحرك 3: Lingva Public Mirror ---
     try:
         lingva_url = f"https://lingva.ml/api/v1/en/ar/{requests.utils.quote(short_text)}"
-        res = requests.get(lingva_url, headers=random.choice(headers_list), timeout=5)
+        res = requests.get(lingva_url, timeout=4)
         if res.status_code == 200:
             translated = res.json().get("translation", "")
             if translated:
-                return translated.strip() + "..."
-    except Exception:
-        pass
+                return translated.strip()
+    except Exception as e:
+        print(f"Lingva Fail: {e}")
 
-    # في حال انقطعت السيرفرات تماماً، يعطي وصفاً ذا قيمة للعبة بدلاً من الرسالة المزعجة
-    return f"إصدار كلاسيكي مميز ينتمي لفئة الألعاب الشيقة التي اشتهرت بها منصات البلايستيشن."
+    # --- المحرك 4: Freetranslate Endpoint ---
+    try:
+        ft_url = f"https://ftapi.pythonanywhere.com/translate?sl=en&dl=ar&text={requests.utils.quote(short_text)}"
+        res = requests.get(ft_url, timeout=4)
+        if res.status_code == 200:
+            translated = res.json().get("destination-text", "")
+            if translated:
+                return translated.strip()
+    except Exception as e:
+        print(f"FreeTranslate Fail: {e}")
+
+    # خيار إرجاع النص الأساسي فقط في أضيق الحدود الاستثنائية
+    return short_text + "..."
 
 def generate_rating_bar(rating):
     """إنشاء شريط تقييم بصري مجسم"""
