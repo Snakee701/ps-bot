@@ -8,7 +8,6 @@ from flask import Flask
 import discord
 from discord.ext import tasks
 from bs4 import BeautifulSoup
-from deep_translator import GoogleTranslator, MyMemoryTranslator
 
 # --- سيرفر وهمي يبقي البوت متصلاً ---
 app = Flask('')
@@ -27,7 +26,6 @@ def keep_alive():
     t.start()
 
 def self_ping():
-    """دالة تصحي السيرفر كل 4 دقائق تلقائياً لمنع خمول Render"""
     time.sleep(10)
     url = "https://ps-bot-fq0t.onrender.com"
     while True:
@@ -43,7 +41,6 @@ TOKEN = os.getenv('BOT_TOKEN')
 RAWG_API_KEY = os.getenv('RAWG_API_KEY')
 CHANNEL_ID = 1392242746718162997
 
-# 27 = PlayStation 1 | 15 = PlayStation 2
 PLATFORMS = "27,15"
 
 COLOR_PALETTE = [
@@ -109,68 +106,72 @@ GENRES_TRANSLATION = {
 }
 
 def clean_html_and_text(raw_html):
-    """تنظيف النص من أي وسوم HTML أو أكواد تمنع الترجمة"""
     if not raw_html:
         return ""
-    # استخراج النص الصافي بدون HTML
     soup = BeautifulSoup(raw_html, "html.parser")
     text = soup.get_text(separator=' ')
-    # إزالة الأكواد والروابط والرموز الغريبة
     text = re.sub(r'https?://\S+', '', text)
-    text = re.sub(r'[^\w\s\.\,\!\'\-]', '', text)
     text = " ".join(text.split())
     return text
 
-def is_arabic(text):
-    """التحقق مما إذا كان النص يحتوي على حروف عربية"""
-    return bool(re.search(r'[\u0600-\u06FF]', text))
-
-def translate_description(raw_text, game_title="", genres=[]):
-    """دالة ترجمة حازمة تنظّف النص وتترجمه ولا ترجع نصاً إنجليزيًا أبداً"""
-    cleaned = clean_html_and_text(raw_text)
-    
-    genre_name = genres[0] if genres else "المغامرات والأكشن"
-    fallback_text = f"تعتبر **{game_title}** واحدة من ألعاب ({genre_name}) الكلاسيكية التي صدرت على منصات البلايستيشن، وتقدم تجربة لعب ممتعة من الجيل الذهبي."
-
-    if not cleaned or len(cleaned) < 10:
-        return fallback_text
-
-    # أخذ أول 300 حرف فقط لنص نظيف وسريع الترجمة
-    target_text = cleaned[:300]
-
-    # المحاولة 1: Google Translator
+def direct_google_translate(text):
+    """ترجمة مباشرة عبر سيرفر محايد يتجاوز حظر Render"""
     try:
-        translated = GoogleTranslator(source='en', target='ar').translate(target_text)
-        if translated and is_arabic(translated) and len(translated.strip()) > 10:
-            return translated.strip() + "..."
+        url = "https://ftapi.pythonanywhere.com/translate"
+        params = {
+            'sl': 'en',
+            'dl': 'ar',
+            'text': text[:400]
+        }
+        res = requests.get(url, params=params, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            translated = data.get('destination-text', '')
+            if translated and len(translated) > 10:
+                return translated
     except Exception as e:
-        print(f"Google Translator failed: {e}")
+        print(f"Primary API fail: {e}")
 
-    # المحاولة 2: MyMemory Translator
     try:
-        translated = MyMemoryTranslator(source='en-US', target='ar-SA').translate(target_text)
-        if translated and is_arabic(translated) and "MYMEMORY" not in translated:
-            return translated.strip() + "..."
-    except Exception as e:
-        print(f"MyMemory Translator failed: {e}")
-
-    # المحاولة 3: طلب مباشر كخيار احتياطي
-    try:
-        gt_url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ar&dt=t&q={requests.utils.quote(target_text)}"
-        res = requests.get(gt_url, timeout=5)
+        # المحاولة الثانية المباشرة لـ Google Translate Bypass
+        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ar&dt=t&q={requests.utils.quote(text[:350])}"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        res = requests.get(url, headers=headers, timeout=5)
         if res.status_code == 200:
             result = res.json()
-            translated = "".join([sentence[0] for sentence in result[0] if sentence[0]])
-            if translated and is_arabic(translated):
-                return translated.strip() + "..."
+            translated_sentences = [sentence[0] for sentence in result[0] if sentence[0]]
+            full_trans = "".join(translated_sentences)
+            if full_trans and len(full_trans) > 10:
+                return full_trans
+    except Exception as e:
+        print(f"Secondary API fail: {e}")
+
+    return None
+
+def translate_description(raw_text, game_title=""):
+    cleaned = clean_html_and_text(raw_text)
+    if not cleaned:
+        return "لا تتوفر نبذة تفصيلية لهذه اللعبة حالياً."
+
+    # محاولة ترجمة النص الأصلي الحقيقي للعبة
+    translated_text = direct_google_translate(cleaned)
+    if translated_text:
+        return translated_text + "..."
+
+    # في حال فشل الاتصال، يجلب ملخص اللغة العربية من ويكيبيديا للعبة نفسها مباشرة!
+    try:
+        wiki_url = f"https://ar.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(game_title)}"
+        res = requests.get(wiki_url, timeout=4)
+        if res.status_code == 200:
+            summary = res.json().get('extract', '')
+            if summary:
+                return summary
     except Exception:
         pass
 
-    # إذا فشلت الترجمة تماماً، يرجّع نبذة عربية مخصصة للعبة بدل النص الإنجليزي
-    return fallback_text
+    return f"تعتبر {game_title} من الألعاب الشهيرة التي قدمت أسلوب لعب فريد على منصات البلايستيشن، حيث تخوض فيها معارك وتحديات استراتيجية ممتعة."
 
 def generate_rating_bar(rating):
-    """إنشاء شريط تقييم بصري مجسم"""
     try:
         score = float(rating)
         filled = int(round((score / 5.0) * 10))
@@ -181,7 +182,6 @@ def generate_rating_bar(rating):
         return "`[▱▱▱▱▱▱▱▱▱▱]` **N/A**"
 
 def get_badge(rating, released_year):
-    """تحديد الشارة التفاعلية بناءً على التقييم وسنة الإصدار"""
     try:
         score = float(rating)
         if score >= 4.2:
@@ -197,7 +197,6 @@ def get_badge(rating, released_year):
     return "🎮 **لعبة كلاسيكية • RETRO GAME**"
 
 def fetch_random_game():
-    """جلب لعبة عشوائية حصرية لمنصات PS1 و PS2"""
     try:
         page_num = random.randint(1, 40)
         url = f"https://api.rawg.io/api/games?key={RAWG_API_KEY}&platforms={PLATFORMS}&page={page_num}&page_size=20"
@@ -215,34 +214,28 @@ def fetch_random_game():
     return None
 
 def build_game_embed(game):
-    """بناء البطاقة وتصفية البيانات وإضافة العناصر البصرية"""
     title = game.get('name', 'لعبة غير معروفة')
     game_image = game.get('background_image', '')
     released = game.get('released', 'غير معروف')
     released_year = released.split('-')[0] if released and '-' in released else ''
     rating = game.get('rating', 'N/A')
     
-    # تصفية أجهزة البلايستيشن
     all_platforms = [p['platform']['name'] for p in game.get('platforms', [])]
     ps_platforms = [p for p in all_platforms if "PlayStation" in p or "PS" in p]
     platforms_str = ", ".join(ps_platforms) if ps_platforms else "PlayStation 1 / 2"
     
-    # المطورين
     raw_devs = [d['name'] for d in game.get('developers', [])]
     clean_devs = [clean_html_and_text(d) for d in raw_devs if not d.startswith("'''")]
     developers = ", ".join(filter(None, clean_devs)) or "غير معروف"
     
-    # التصنيف
     raw_genres = [g['name'] for g in game.get('genres', [])]
     translated_genres = [GENRES_TRANSLATION.get(g, g) for g in raw_genres]
     genres_str = ", ".join(translated_genres) or "متنوع"
     
-    # النبذة المترجمة ووقت القراءة
     raw_desc = game.get('description_raw') or game.get('description') or ''
-    game_desc = translate_description(raw_desc, game_title=title, genres=translated_genres)
+    game_desc = translate_description(raw_desc, game_title=title)
     read_time = max(1, len(game_desc) // 200)
 
-    # العناصر الجمالية البصرية
     selected_color = random.choice(COLOR_PALETTE)
     selected_header = random.choice(HEADER_STYLES)
     selected_icon = random.choice(AUTHOR_ICONS)
@@ -276,7 +269,6 @@ def build_game_embed(game):
     embed.set_footer(text=selected_footer)
     return embed
 
-# --- كود التشغيل ---
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
@@ -294,7 +286,6 @@ async def on_ready():
     if not send_hourly_game.is_running():
         send_hourly_game.start()
 
-# إرسال بطاقة لعبة جديدة كل 5 دقائق
 @tasks.loop(minutes=5)
 async def send_hourly_game():
     try:
@@ -311,7 +302,6 @@ async def send_hourly_game():
 async def before_send_hourly_game():
     await client.wait_until_ready()
 
-# تشغيل خادم Flask وتفعيل آلية Self-Ping للعمل 24/7
 keep_alive()
 
 ping_thread = threading.Thread(target=self_ping)
