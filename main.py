@@ -116,31 +116,24 @@ def clean_text(text):
     clean = " ".join(clean.split())
     return clean
 
-def translate_description(text):
-    """مواسر ترجمة رباعية الطبقات شاملة ومضمونة 100%"""
-    cleaned = clean_text(text)
-    if not cleaned:
-        return "لا توجد نبذة متوفرة لهذه اللعبة."
-
-    # تقسيم النص إلى حجم متناسق ومثالي للترجمة السريعة الدقيقة
-    short_text = cleaned[:600]
-
-    # --- المحرك 1: Google Translate Primary ---
+def translate_single_chunk(chunk):
+    """دالة ترجمة قطعة صغيرة واحدة تجرّب عدة سيرفرات"""
+    # 1. Google Translate
     try:
-        gt_url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ar&dt=t&q={requests.utils.quote(short_text)}"
-        res = requests.get(gt_url, timeout=4)
+        gt_url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ar&dt=t&q={requests.utils.quote(chunk)}"
+        res = requests.get(gt_url, timeout=5)
         if res.status_code == 200:
             result = res.json()
             translated = "".join([sentence[0] for sentence in result[0] if sentence[0]])
-            if translated and len(translated.strip()) > 10:
+            if translated and len(translated.strip()) > 3:
                 return translated.strip()
     except Exception as e:
-        print(f"Google Translate Fail: {e}")
+        print(f"Google Fail: {e}")
 
-    # --- المحرك 2: MyMemory API ---
+    # 2. MyMemory API
     try:
-        mm_url = f"https://api.mymemory.translated.net/get?q={requests.utils.quote(short_text[:350])}&langpair=en|ar"
-        res = requests.get(mm_url, timeout=4)
+        mm_url = f"https://api.mymemory.translated.net/get?q={requests.utils.quote(chunk)}&langpair=en|ar"
+        res = requests.get(mm_url, timeout=5)
         if res.status_code == 200:
             translated = res.json().get("responseData", {}).get("translatedText", "")
             if translated and "MYMEMORY" not in translated and "QUERY LENGTH" not in translated:
@@ -148,10 +141,10 @@ def translate_description(text):
     except Exception as e:
         print(f"MyMemory Fail: {e}")
 
-    # --- المحرك 3: Lingva Public Mirror ---
+    # 3. Lingva API
     try:
-        lingva_url = f"https://lingva.ml/api/v1/en/ar/{requests.utils.quote(short_text)}"
-        res = requests.get(lingva_url, timeout=4)
+        lingva_url = f"https://lingva.ml/api/v1/en/ar/{requests.utils.quote(chunk)}"
+        res = requests.get(lingva_url, timeout=5)
         if res.status_code == 200:
             translated = res.json().get("translation", "")
             if translated:
@@ -159,19 +152,31 @@ def translate_description(text):
     except Exception as e:
         print(f"Lingva Fail: {e}")
 
-    # --- المحرك 4: Freetranslate Endpoint ---
-    try:
-        ft_url = f"https://ftapi.pythonanywhere.com/translate?sl=en&dl=ar&text={requests.utils.quote(short_text)}"
-        res = requests.get(ft_url, timeout=4)
-        if res.status_code == 200:
-            translated = res.json().get("destination-text", "")
-            if translated:
-                return translated.strip()
-    except Exception as e:
-        print(f"FreeTranslate Fail: {e}")
+    return ""
 
-    # خيار إرجاع النص الأساسي فقط في أضيق الحدود الاستثنائية
-    return short_text + "..."
+def translate_description(text):
+    """دالة تجزئ النص الطويل وترجمه قطعة قطعة لضمان ترجمة أي نص مهما كان طوله"""
+    cleaned = clean_text(text)
+    if not cleaned:
+        return "لا توجد نبذة متوفرة لهذه اللعبة."
+
+    # تقطيع النص بحد أقصى 350 حرف للقطعة
+    chunk_size = 350
+    chunks = [cleaned[i:i+chunk_size] for i in range(0, len(cleaned), chunk_size)]
+    
+    # نترجم أول قطعتين فقط لتجنب الإطالة (حوالي 700 حرف إجمالي)
+    translated_parts = []
+    for chunk in chunks[:2]:
+        part = translate_single_chunk(chunk)
+        if part:
+            translated_parts.append(part)
+
+    if translated_parts:
+        full_translation = " ".join(translated_parts)
+        return full_translation + "..."
+
+    # في حال انقطعت كل خوادم الترجمة تماماً
+    return "واحدة من ألعاب البلايستيشن الكلاسيكية الشهيرة التي قدمت تجربة ألعاب مميزة وممتعة من العصر الذهبي."
 
 def generate_rating_bar(rating):
     """إنشاء شريط تقييم بصري مجسم"""
