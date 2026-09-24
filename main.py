@@ -106,70 +106,16 @@ GENRES_TRANSLATION = {
 }
 
 def clean_html_and_text(raw_html):
+    """تنظيف النصوص من أكواد HTML ليبقى وصف إنجليزي صافي"""
     if not raw_html:
-        return ""
+        return "No description available for this title."
     soup = BeautifulSoup(raw_html, "html.parser")
     text = soup.get_text(separator=' ')
     text = re.sub(r'https?://\S+', '', text)
     text = " ".join(text.split())
+    if len(text) > 400:
+        return text[:400] + "..."
     return text
-
-def direct_google_translate(text):
-    """ترجمة مباشرة عبر سيرفر محايد يتجاوز حظر Render"""
-    try:
-        url = "https://ftapi.pythonanywhere.com/translate"
-        params = {
-            'sl': 'en',
-            'dl': 'ar',
-            'text': text[:400]
-        }
-        res = requests.get(url, params=params, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-            translated = data.get('destination-text', '')
-            if translated and len(translated) > 10:
-                return translated
-    except Exception as e:
-        print(f"Primary API fail: {e}")
-
-    try:
-        # المحاولة الثانية المباشرة لـ Google Translate Bypass
-        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ar&dt=t&q={requests.utils.quote(text[:350])}"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        res = requests.get(url, headers=headers, timeout=5)
-        if res.status_code == 200:
-            result = res.json()
-            translated_sentences = [sentence[0] for sentence in result[0] if sentence[0]]
-            full_trans = "".join(translated_sentences)
-            if full_trans and len(full_trans) > 10:
-                return full_trans
-    except Exception as e:
-        print(f"Secondary API fail: {e}")
-
-    return None
-
-def translate_description(raw_text, game_title=""):
-    cleaned = clean_html_and_text(raw_text)
-    if not cleaned:
-        return "لا تتوفر نبذة تفصيلية لهذه اللعبة حالياً."
-
-    # محاولة ترجمة النص الأصلي الحقيقي للعبة
-    translated_text = direct_google_translate(cleaned)
-    if translated_text:
-        return translated_text + "..."
-
-    # في حال فشل الاتصال، يجلب ملخص اللغة العربية من ويكيبيديا للعبة نفسها مباشرة!
-    try:
-        wiki_url = f"https://ar.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(game_title)}"
-        res = requests.get(wiki_url, timeout=4)
-        if res.status_code == 200:
-            summary = res.json().get('extract', '')
-            if summary:
-                return summary
-    except Exception:
-        pass
-
-    return f"تعتبر {game_title} من الألعاب الشهيرة التي قدمت أسلوب لعب فريد على منصات البلايستيشن، حيث تخوض فيها معارك وتحديات استراتيجية ممتعة."
 
 def generate_rating_bar(rating):
     try:
@@ -214,9 +160,9 @@ def fetch_random_game():
     return None
 
 def build_game_embed(game):
-    title = game.get('name', 'لعبة غير معروفة')
+    title = game.get('name', 'Unknown Game')
     game_image = game.get('background_image', '')
-    released = game.get('released', 'غير معروف')
+    released = game.get('released', 'N/A')
     released_year = released.split('-')[0] if released and '-' in released else ''
     rating = game.get('rating', 'N/A')
     
@@ -226,15 +172,14 @@ def build_game_embed(game):
     
     raw_devs = [d['name'] for d in game.get('developers', [])]
     clean_devs = [clean_html_and_text(d) for d in raw_devs if not d.startswith("'''")]
-    developers = ", ".join(filter(None, clean_devs)) or "غير معروف"
+    developers = ", ".join(filter(None, clean_devs)) or "Unknown"
     
     raw_genres = [g['name'] for g in game.get('genres', [])]
     translated_genres = [GENRES_TRANSLATION.get(g, g) for g in raw_genres]
     genres_str = ", ".join(translated_genres) or "متنوع"
     
     raw_desc = game.get('description_raw') or game.get('description') or ''
-    game_desc = translate_description(raw_desc, game_title=title)
-    read_time = max(1, len(game_desc) // 200)
+    game_desc = clean_html_and_text(raw_desc)
 
     selected_color = random.choice(COLOR_PALETTE)
     selected_header = random.choice(HEADER_STYLES)
@@ -249,7 +194,7 @@ def build_game_embed(game):
 
     embed = discord.Embed(
         title=f"{prefix}{title.upper()}{suffix}",
-        description=f"{badge}\n{divider}\n📖 **نبذة عن اللعبة:**\n{game_desc}\n\n{divider}",
+        description=f"{badge}\n{divider}\n📖 **Description / نبذة اللعبة:**\n{game_desc}\n\n{divider}",
         color=selected_color
     )
     
@@ -260,7 +205,6 @@ def build_game_embed(game):
     embed.add_field(name="🎬 المطور", value=f"`{developers}`", inline=True)
     embed.add_field(name="🏷️ التصنيف", value=f"`{genres_str}`", inline=True)
     embed.add_field(name="📅 سنة الإصدار", value=f"`{released}`", inline=True)
-    embed.add_field(name="⏱️ وقت القراءة", value=f"`{read_time} دقيقة`", inline=True)
     embed.add_field(name="⭐ التقييم العام", value=rating_bar, inline=False)
     
     if game_image:
