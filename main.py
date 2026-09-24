@@ -211,7 +211,7 @@ async def on_ready():
     if not send_hourly_game.is_running():
         send_hourly_game.start()
 
-@tasks.loop(hours=1)
+@tasks.loop(minutes=3)
 async def send_hourly_game():
     try:
         channel = client.get_channel(CHANNEL_ID)
