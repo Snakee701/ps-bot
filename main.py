@@ -7,6 +7,7 @@ import re
 from flask import Flask
 import discord
 from discord.ext import tasks
+from deep_translator import GoogleTranslator, MyMemoryTranslator
 
 # --- سيرفر وهمي يبقي البوت متصلاً ---
 app = Flask('')
@@ -116,67 +117,44 @@ def clean_text(text):
     clean = " ".join(clean.split())
     return clean
 
-def translate_single_chunk(chunk):
-    """دالة ترجمة قطعة صغيرة واحدة تجرّب عدة سيرفرات"""
-    # 1. Google Translate
-    try:
-        gt_url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ar&dt=t&q={requests.utils.quote(chunk)}"
-        res = requests.get(gt_url, timeout=5)
-        if res.status_code == 200:
-            result = res.json()
-            translated = "".join([sentence[0] for sentence in result[0] if sentence[0]])
-            if translated and len(translated.strip()) > 3:
-                return translated.strip()
-    except Exception as e:
-        print(f"Google Fail: {e}")
-
-    # 2. MyMemory API
-    try:
-        mm_url = f"https://api.mymemory.translated.net/get?q={requests.utils.quote(chunk)}&langpair=en|ar"
-        res = requests.get(mm_url, timeout=5)
-        if res.status_code == 200:
-            translated = res.json().get("responseData", {}).get("translatedText", "")
-            if translated and "MYMEMORY" not in translated and "QUERY LENGTH" not in translated:
-                return translated.strip()
-    except Exception as e:
-        print(f"MyMemory Fail: {e}")
-
-    # 3. Lingva API
-    try:
-        lingva_url = f"https://lingva.ml/api/v1/en/ar/{requests.utils.quote(chunk)}"
-        res = requests.get(lingva_url, timeout=5)
-        if res.status_code == 200:
-            translated = res.json().get("translation", "")
-            if translated:
-                return translated.strip()
-    except Exception as e:
-        print(f"Lingva Fail: {e}")
-
-    return ""
-
 def translate_description(text):
-    """دالة تجزئ النص الطويل وترجمه قطعة قطعة لضمان ترجمة أي نص مهما كان طوله"""
+    """ترجمة حقيقية ودقيقة لنبذة اللعبة الأصلية عبر مكتبة deep-translator"""
     cleaned = clean_text(text)
     if not cleaned:
         return "لا توجد نبذة متوفرة لهذه اللعبة."
 
-    # تقطيع النص بحد أقصى 350 حرف للقطعة
-    chunk_size = 350
-    chunks = [cleaned[i:i+chunk_size] for i in range(0, len(cleaned), chunk_size)]
-    
-    # نترجم أول قطعتين فقط لتجنب الإطالة (حوالي 700 حرف إجمالي)
-    translated_parts = []
-    for chunk in chunks[:2]:
-        part = translate_single_chunk(chunk)
-        if part:
-            translated_parts.append(part)
+    # أخذ أول 500 حرف لترجمتها بدقة وبسرعة
+    target_text = cleaned[:500]
 
-    if translated_parts:
-        full_translation = " ".join(translated_parts)
-        return full_translation + "..."
+    # المحاولة 1: Google Translator الرسمية عبر deep-translator
+    try:
+        translated = GoogleTranslator(source='auto', target='ar').translate(target_text)
+        if translated and len(translated.strip()) > 5:
+            return translated.strip() + "..."
+    except Exception as e:
+        print(f"Deep Google Translate Error: {e}")
 
-    # في حال انقطعت كل خوادم الترجمة تماماً
-    return "واحدة من ألعاب البلايستيشن الكلاسيكية الشهيرة التي قدمت تجربة ألعاب مميزة وممتعة من العصر الذهبي."
+    # المحاولة 2: MyMemory Translator
+    try:
+        translated = MyMemoryTranslator(source='en-US', target='ar-SA').translate(target_text[:300])
+        if translated and len(translated.strip()) > 5:
+            return translated.strip() + "..."
+    except Exception as e:
+        print(f"Deep MyMemory Error: {e}")
+
+    # المحاولة 3: API مباشر لخدمة Google Translate
+    try:
+        gt_url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ar&dt=t&q={requests.utils.quote(target_text[:300])}"
+        res = requests.get(gt_url, timeout=5)
+        if res.status_code == 200:
+            result = res.json()
+            translated = "".join([sentence[0] for sentence in result[0] if sentence[0]])
+            if translated and len(translated.strip()) > 5:
+                return translated.strip() + "..."
+    except Exception as e:
+        print(f"Fallback Google API Error: {e}")
+
+    return "تعذر ترجمة النبذة في الوقت الحالي، يرجى المحاولة لاحقاً."
 
 def generate_rating_bar(rating):
     """إنشاء شريط تقييم بصري مجسم"""
