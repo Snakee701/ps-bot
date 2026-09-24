@@ -2,3 +2,4 @@ discord.py
 requests
 Flask
 deep-translator
+beautifulsoup4
