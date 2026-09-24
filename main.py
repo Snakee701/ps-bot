@@ -7,6 +7,7 @@ import re
 from flask import Flask
 import discord
 from discord.ext import tasks
+from deep_translator import GoogleTranslator, LingvaTranslator, MyMemoryTranslator
 
 # --- سيرفر وهمي يبقي البوت متصلاً ---
 app = Flask('')
@@ -116,62 +117,53 @@ def clean_text(text):
     clean = " ".join(clean.split())
     return clean
 
-def translate_description(text):
-    """مواسر ترجمة رباعية الطبقات شاملة ومضمونة 100%"""
+def translate_description(text, game_title="", genres=[]):
+    """نظام ترجمة محصّن يجرب عدة محركات متطورة للترجمة الفعلية"""
     cleaned = clean_text(text)
     if not cleaned:
-        return "لا توجد نبذة متوفرة لهذه اللعبة."
+        return f"تعتبر لعبة {game_title} من العناوين الشيقة الكلاسيكية التي قدمت تجربة ألعاب مميزة على أجهزة البلايستيشن."
 
-    # تقسيم النص إلى حجم متناسق ومثالي للترجمة السريعة الدقيقة
-    short_text = cleaned[:600]
+    # تقليل النص إلى 250 حرف فقط لضمان سرعة واستجابة الترجمة ومنع الحظر
+    short_text = cleaned[:250]
 
-    # --- المحرك 1: Google Translate Primary ---
+    # 1. محاولة Google عبر deep-translator
     try:
-        gt_url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ar&dt=t&q={requests.utils.quote(short_text)}"
-        res = requests.get(gt_url, timeout=4)
-        if res.status_code == 200:
-            result = res.json()
-            translated = "".join([sentence[0] for sentence in result[0] if sentence[0]])
-            if translated and len(translated.strip()) > 10:
-                return translated.strip()
+        translated = GoogleTranslator(source='auto', target='ar').translate(short_text)
+        if translated and len(translated.strip()) > 10:
+            return translated.strip() + "..."
     except Exception as e:
-        print(f"Google Translate Fail: {e}")
+        print(f"Deep Google Error: {e}")
 
-    # --- المحرك 2: MyMemory API ---
+    # 2. محاولة Lingva عبر deep-translator
     try:
-        mm_url = f"https://api.mymemory.translated.net/get?q={requests.utils.quote(short_text[:350])}&langpair=en|ar"
-        res = requests.get(mm_url, timeout=4)
-        if res.status_code == 200:
-            translated = res.json().get("responseData", {}).get("translatedText", "")
-            if translated and "MYMEMORY" not in translated and "QUERY LENGTH" not in translated:
-                return translated.strip()
+        translated = LingvaTranslator(source='en', target='ar').translate(short_text)
+        if translated and len(translated.strip()) > 10:
+            return translated.strip() + "..."
     except Exception as e:
-        print(f"MyMemory Fail: {e}")
+        print(f"Deep Lingva Error: {e}")
 
-    # --- المحرك 3: Lingva Public Mirror ---
+    # 3. محاولة MyMemory عبر deep-translator
     try:
-        lingva_url = f"https://lingva.ml/api/v1/en/ar/{requests.utils.quote(short_text)}"
-        res = requests.get(lingva_url, timeout=4)
-        if res.status_code == 200:
-            translated = res.json().get("translation", "")
-            if translated:
-                return translated.strip()
+        translated = MyMemoryTranslator(source='en-US', target='ar-SA').translate(short_text)
+        if translated and "MYMEMORY" not in translated and len(translated.strip()) > 10:
+            return translated.strip() + "..."
     except Exception as e:
-        print(f"Lingva Fail: {e}")
+        print(f"Deep MyMemory Error: {e}")
 
-    # --- المحرك 4: Freetranslate Endpoint ---
+    # 4. محاولة طلب مباشر لسيرفر ترجمة آخر (Apertium/MyMemory Direct)
     try:
-        ft_url = f"https://ftapi.pythonanywhere.com/translate?sl=en&dl=ar&text={requests.utils.quote(short_text)}"
-        res = requests.get(ft_url, timeout=4)
+        url = f"https://api.mymemory.translated.net/get?q={requests.utils.quote(short_text)}&langpair=en|ar"
+        res = requests.get(url, timeout=4)
         if res.status_code == 200:
-            translated = res.json().get("destination-text", "")
-            if translated:
-                return translated.strip()
-    except Exception as e:
-        print(f"FreeTranslate Fail: {e}")
+            trans = res.json().get("responseData", {}).get("translatedText", "")
+            if trans and "MYMEMORY" not in trans and len(trans) > 10:
+                return trans + "..."
+    except Exception:
+        pass
 
-    # خيار إرجاع النص الأساسي فقط في أضيق الحدود الاستثنائية
-    return short_text + "..."
+    # 5. في حال حظر جميع السيرفرات تماماً، يقوم البوت بتركيب نبذة ديناميكية تتغير حسب اللعبة وتصنيفها
+    genre_name = genres[0] if genres else "المغامرات والأكشن"
+    return f"تعتبر **{game_title}** واحدة من أبرز ألعاب فئة ({genre_name}) التي صدرت في العصر الذهبي للبلايستيشن، وتقدم أسلوب لعب ممتع وتجربة كلاسيكية لا تُنسى."
 
 def generate_rating_bar(rating):
     """إنشاء شريط تقييم بصري مجسم"""
@@ -243,7 +235,7 @@ def build_game_embed(game):
     
     # النبذة المترجمة ووقت القراءة
     raw_desc = game.get('description_raw') or game.get('description') or ''
-    game_desc = translate_description(raw_desc)
+    game_desc = translate_description(raw_desc, game_title=title, genres=translated_genres)
     read_time = max(1, len(game_desc) // 200)
 
     # العناصر الجمالية البصرية
@@ -272,7 +264,7 @@ def build_game_embed(game):
     embed.add_field(name="🏷️ التصنيف", value=f"`{genres_str}`", inline=True)
     embed.add_field(name="📅 سنة الإصدار", value=f"`{released}`", inline=True)
     embed.add_field(name="⏱️ وقت القراءة", value=f"`{read_time} دقيقة`", inline=True)
-    embed.add_field(name="⭐ التقييم العام", value=rating_bar, inline=False)
+    embed.add_field(name="⭐ التقييم العام", valuerating_bar, inline=False)
     
     if game_image:
         embed.set_image(url=game_image)
