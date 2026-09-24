@@ -7,7 +7,8 @@ import re
 from flask import Flask
 import discord
 from discord.ext import tasks
-from deep_translator import GoogleTranslator, LingvaTranslator, MyMemoryTranslator
+from bs4 import BeautifulSoup
+from deep_translator import GoogleTranslator, MyMemoryTranslator
 
 # --- سيرفر وهمي يبقي البوت متصلاً ---
 app = Flask('')
@@ -107,63 +108,66 @@ GENRES_TRANSLATION = {
     "Casual": "خفيفة / كاجوال"
 }
 
-def clean_text(text):
-    """تنظيف النص وإزالة أوسام HTML والأكواد الغريبة"""
-    if not text:
+def clean_html_and_text(raw_html):
+    """تنظيف النص من أي وسوم HTML أو أكواد تمنع الترجمة"""
+    if not raw_html:
         return ""
-    clean = re.sub(r'<[^>]+>', '', text)
-    clean = re.sub(r"'''[^']*'''", '', clean)
-    clean = re.sub(r'https?://\S+', '', clean)
-    clean = " ".join(clean.split())
-    return clean
+    # استخراج النص الصافي بدون HTML
+    soup = BeautifulSoup(raw_html, "html.parser")
+    text = soup.get_text(separator=' ')
+    # إزالة الأكواد والروابط والرموز الغريبة
+    text = re.sub(r'https?://\S+', '', text)
+    text = re.sub(r'[^\w\s\.\,\!\'\-]', '', text)
+    text = " ".join(text.split())
+    return text
 
-def translate_description(text, game_title="", genres=[]):
-    """نظام ترجمة محصّن يجرب عدة محركات متطورة للترجمة الفعلية"""
-    cleaned = clean_text(text)
-    if not cleaned:
-        return f"تعتبر لعبة {game_title} من العناوين الشيقة الكلاسيكية التي قدمت تجربة ألعاب مميزة على أجهزة البلايستيشن."
+def is_arabic(text):
+    """التحقق مما إذا كان النص يحتوي على حروف عربية"""
+    return bool(re.search(r'[\u0600-\u06FF]', text))
 
-    # تقليل النص إلى 250 حرف فقط لضمان سرعة واستجابة الترجمة ومنع الحظر
-    short_text = cleaned[:250]
+def translate_description(raw_text, game_title="", genres=[]):
+    """دالة ترجمة حازمة تنظّف النص وتترجمه ولا ترجع نصاً إنجليزيًا أبداً"""
+    cleaned = clean_html_and_text(raw_text)
+    
+    genre_name = genres[0] if genres else "المغامرات والأكشن"
+    fallback_text = f"تعتبر **{game_title}** واحدة من ألعاب ({genre_name}) الكلاسيكية التي صدرت على منصات البلايستيشن، وتقدم تجربة لعب ممتعة من الجيل الذهبي."
 
-    # 1. محاولة Google عبر deep-translator
+    if not cleaned or len(cleaned) < 10:
+        return fallback_text
+
+    # أخذ أول 300 حرف فقط لنص نظيف وسريع الترجمة
+    target_text = cleaned[:300]
+
+    # المحاولة 1: Google Translator
     try:
-        translated = GoogleTranslator(source='auto', target='ar').translate(short_text)
-        if translated and len(translated.strip()) > 10:
+        translated = GoogleTranslator(source='en', target='ar').translate(target_text)
+        if translated and is_arabic(translated) and len(translated.strip()) > 10:
             return translated.strip() + "..."
     except Exception as e:
-        print(f"Deep Google Error: {e}")
+        print(f"Google Translator failed: {e}")
 
-    # 2. محاولة Lingva عبر deep-translator
+    # المحاولة 2: MyMemory Translator
     try:
-        translated = LingvaTranslator(source='en', target='ar').translate(short_text)
-        if translated and len(translated.strip()) > 10:
+        translated = MyMemoryTranslator(source='en-US', target='ar-SA').translate(target_text)
+        if translated and is_arabic(translated) and "MYMEMORY" not in translated:
             return translated.strip() + "..."
     except Exception as e:
-        print(f"Deep Lingva Error: {e}")
+        print(f"MyMemory Translator failed: {e}")
 
-    # 3. محاولة MyMemory عبر deep-translator
+    # المحاولة 3: طلب مباشر كخيار احتياطي
     try:
-        translated = MyMemoryTranslator(source='en-US', target='ar-SA').translate(short_text)
-        if translated and "MYMEMORY" not in translated and len(translated.strip()) > 10:
-            return translated.strip() + "..."
-    except Exception as e:
-        print(f"Deep MyMemory Error: {e}")
-
-    # 4. محاولة طلب مباشر لسيرفر ترجمة آخر (Apertium/MyMemory Direct)
-    try:
-        url = f"https://api.mymemory.translated.net/get?q={requests.utils.quote(short_text)}&langpair=en|ar"
-        res = requests.get(url, timeout=4)
+        gt_url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ar&dt=t&q={requests.utils.quote(target_text)}"
+        res = requests.get(gt_url, timeout=5)
         if res.status_code == 200:
-            trans = res.json().get("responseData", {}).get("translatedText", "")
-            if trans and "MYMEMORY" not in trans and len(trans) > 10:
-                return trans + "..."
+            result = res.json()
+            translated = "".join([sentence[0] for sentence in result[0] if sentence[0]])
+            if translated and is_arabic(translated):
+                return translated.strip() + "..."
     except Exception:
         pass
 
-    # 5. في حال حظر جميع السيرفرات تماماً، يقوم البوت بتركيب نبذة ديناميكية تتغير حسب اللعبة وتصنيفها
-    genre_name = genres[0] if genres else "المغامرات والأكشن"
-    return f"تعتبر **{game_title}** واحدة من أبرز ألعاب فئة ({genre_name}) التي صدرت في العصر الذهبي للبلايستيشن، وتقدم أسلوب لعب ممتع وتجربة كلاسيكية لا تُنسى."
+    # إذا فشلت الترجمة تماماً، يرجّع نبذة عربية مخصصة للعبة بدل النص الإنجليزي
+    return fallback_text
 
 def generate_rating_bar(rating):
     """إنشاء شريط تقييم بصري مجسم"""
@@ -225,7 +229,7 @@ def build_game_embed(game):
     
     # المطورين
     raw_devs = [d['name'] for d in game.get('developers', [])]
-    clean_devs = [clean_text(d) for d in raw_devs if not d.startswith("'''")]
+    clean_devs = [clean_html_and_text(d) for d in raw_devs if not d.startswith("'''")]
     developers = ", ".join(filter(None, clean_devs)) or "غير معروف"
     
     # التصنيف
@@ -264,7 +268,7 @@ def build_game_embed(game):
     embed.add_field(name="🏷️ التصنيف", value=f"`{genres_str}`", inline=True)
     embed.add_field(name="📅 سنة الإصدار", value=f"`{released}`", inline=True)
     embed.add_field(name="⏱️ وقت القراءة", value=f"`{read_time} دقيقة`", inline=True)
-    embed.add_field(name="⭐ التقييم العام", valuerating_bar, inline=False)
+    embed.add_field(name="⭐ التقييم العام", value=rating_bar, inline=False)
     
     if game_image:
         embed.set_image(url=game_image)
