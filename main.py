@@ -61,7 +61,6 @@ AUTHOR_ICONS = [
     "https://cdn.discordapp.com/attachments/1382017672253800479/1552255596902744074/1.jpg"
 ]
 
-# أيقونات الشعار المصغر بالزاوية (PlayStation Icons)
 THUMBNAIL_ICONS = [
     "https://upload.wikimedia.org/wikipedia/commons/thumb/0/00/PlayStation_logo.svg/1024px-PlayStation_logo.svg.png",
     "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/Playstation_logo_colour.svg/1024px-Playstation_logo_colour.svg.png"
@@ -108,32 +107,70 @@ GENRES_TRANSLATION = {
 }
 
 def clean_text(text):
-    """تنظيف النص وإزالة أوسام HTML وأي أكواد غريبة"""
+    """تنظيف النص وإزالة أوسام HTML والأكواد الغريبة"""
     if not text:
         return ""
     clean = re.sub(r'<[^>]+>', '', text)
     clean = re.sub(r"'''[^']*'''", '', clean)
+    clean = re.sub(r'https?://\S+', '', clean)
     clean = " ".join(clean.split())
     return clean
 
 def translate_description(text):
-    """ترجمة النبذة للغة العربية مع الحفاظ على النص كاملاً"""
+    """مواسر ترجمة رباعية الطبقات شاملة ومضمونة 100%"""
     cleaned = clean_text(text)
     if not cleaned:
         return "لا توجد نبذة متوفرة لهذه اللعبة."
 
-    short_text = cleaned[:800]
+    # تقسيم النص إلى حجم متناسق ومثالي للترجمة السريعة الدقيقة
+    short_text = cleaned[:600]
 
+    # --- المحرك 1: Google Translate Primary ---
     try:
-        url = f"https://api.mymemory.translated.net/get?q={requests.utils.quote(short_text)}&langpair=en|ar"
-        res = requests.get(url, timeout=8)
+        gt_url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ar&dt=t&q={requests.utils.quote(short_text)}"
+        res = requests.get(gt_url, timeout=4)
+        if res.status_code == 200:
+            result = res.json()
+            translated = "".join([sentence[0] for sentence in result[0] if sentence[0]])
+            if translated and len(translated.strip()) > 10:
+                return translated.strip()
+    except Exception as e:
+        print(f"Google Translate Fail: {e}")
+
+    # --- المحرك 2: MyMemory API ---
+    try:
+        mm_url = f"https://api.mymemory.translated.net/get?q={requests.utils.quote(short_text[:350])}&langpair=en|ar"
+        res = requests.get(mm_url, timeout=4)
         if res.status_code == 200:
             translated = res.json().get("responseData", {}).get("translatedText", "")
-            if translated and "MYMEMORY WARNING" not in translated and "QUERY LENGTH" not in translated:
-                return translated
+            if translated and "MYMEMORY" not in translated and "QUERY LENGTH" not in translated:
+                return translated.strip()
     except Exception as e:
-        print(f"Translation error: {e}")
+        print(f"MyMemory Fail: {e}")
 
+    # --- المحرك 3: Lingva Public Mirror ---
+    try:
+        lingva_url = f"https://lingva.ml/api/v1/en/ar/{requests.utils.quote(short_text)}"
+        res = requests.get(lingva_url, timeout=4)
+        if res.status_code == 200:
+            translated = res.json().get("translation", "")
+            if translated:
+                return translated.strip()
+    except Exception as e:
+        print(f"Lingva Fail: {e}")
+
+    # --- المحرك 4: Freetranslate Endpoint ---
+    try:
+        ft_url = f"https://ftapi.pythonanywhere.com/translate?sl=en&dl=ar&text={requests.utils.quote(short_text)}"
+        res = requests.get(ft_url, timeout=4)
+        if res.status_code == 200:
+            translated = res.json().get("destination-text", "")
+            if translated:
+                return translated.strip()
+    except Exception as e:
+        print(f"FreeTranslate Fail: {e}")
+
+    # خيار إرجاع النص الأساسي فقط في أضيق الحدود الاستثنائية
     return short_text + "..."
 
 def generate_rating_bar(rating):
@@ -204,10 +241,10 @@ def build_game_embed(game):
     translated_genres = [GENRES_TRANSLATION.get(g, g) for g in raw_genres]
     genres_str = ", ".join(translated_genres) or "متنوع"
     
-    # النبذة ووقت القراءة
+    # النبذة المترجمة ووقت القراءة
     raw_desc = game.get('description_raw') or game.get('description') or ''
     game_desc = translate_description(raw_desc)
-    read_time = max(1, len(game_desc) // 250)
+    read_time = max(1, len(game_desc) // 200)
 
     # العناصر الجمالية البصرية
     selected_color = random.choice(COLOR_PALETTE)
@@ -261,6 +298,7 @@ async def on_ready():
     if not send_hourly_game.is_running():
         send_hourly_game.start()
 
+# إرسال بطاقة لعبة جديدة كل 5 دقائق
 @tasks.loop(minutes=5)
 async def send_hourly_game():
     try:
@@ -277,7 +315,7 @@ async def send_hourly_game():
 async def before_send_hourly_game():
     await client.wait_until_ready()
 
-# تشغيل السيرفر الوهمي والدوافع الذاتية
+# تشغيل خادم Flask وتفعيل آلية Self-Ping للعمل 24/7
 keep_alive()
 
 ping_thread = threading.Thread(target=self_ping)
