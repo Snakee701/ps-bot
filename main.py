@@ -26,7 +26,7 @@ def keep_alive():
 
 def self_ping():
     """دالة تصحي السيرفر كل 4 دقائق تلقائياً لمنع خمول Render"""
-    time.sleep(10) # انتظار تشغيل السيرفر
+    time.sleep(10)
     url = "https://ps-bot-fq0t.onrender.com"
     while True:
         try:
@@ -34,7 +34,7 @@ def self_ping():
             print("🔄 Self-ping sent successfully!")
         except Exception as e:
             print(f"⚠️ Self-ping error: {e}")
-        time.sleep(240) # 4 دقائق (240 ثانية)
+        time.sleep(240)
 
 # --- المتغيرات الأساسية ---
 TOKEN = os.getenv('BOT_TOKEN')
@@ -61,6 +61,12 @@ AUTHOR_ICONS = [
     "https://cdn.discordapp.com/attachments/1382017672253800479/1552255596902744074/1.jpg"
 ]
 
+# أيقونات الشعار المصغر بالزاوية (PlayStation Icons)
+THUMBNAIL_ICONS = [
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/0/00/PlayStation_logo.svg/1024px-PlayStation_logo.svg.png",
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/Playstation_logo_colour.svg/1024px-Playstation_logo_colour.svg.png"
+]
+
 FOOTER_TEXTS = [
     "PLAYSTATION ARCHIVE • الذكريات لا تُمحى من الذاكرة",
     "GOLDEN ERA SYSTEM • من عصر العمالقة والجيل الذهبي",
@@ -71,6 +77,13 @@ TITLE_DECORATIONS = [
     ("━━━ 🎮 ", " ━━━"),
     ("❖ ━━━━ [ ", " ] ━━━━ ❖"),
     ("⚔️ ─── ", " ─── ⚔️")
+]
+
+DIVIDERS = [
+    "──────────────────────────────",
+    "══════════════════════════════",
+    "❖ ─── ✦ ─── ❖ ─── ✦ ─── ❖",
+    "------------------------------"
 ]
 
 GENRES_TRANSLATION = {
@@ -104,24 +117,51 @@ def clean_text(text):
     return clean
 
 def translate_description(text):
-    """محاولة الترجمة للغة العربية، وفي حال التعثر يرجع النبذة الأصلية للعبة"""
+    """ترجمة النبذة للغة العربية مع الحفاظ على النص كاملاً"""
     cleaned = clean_text(text)
     if not cleaned:
         return "لا توجد نبذة متوفرة لهذه اللعبة."
 
-    short_text = cleaned[:180]
+    short_text = cleaned[:800]
 
     try:
         url = f"https://api.mymemory.translated.net/get?q={requests.utils.quote(short_text)}&langpair=en|ar"
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, timeout=8)
         if res.status_code == 200:
             translated = res.json().get("responseData", {}).get("translatedText", "")
             if translated and "MYMEMORY WARNING" not in translated and "QUERY LENGTH" not in translated:
-                return translated + "..."
+                return translated
     except Exception as e:
         print(f"Translation error: {e}")
 
     return short_text + "..."
+
+def generate_rating_bar(rating):
+    """إنشاء شريط تقييم بصري مجسم"""
+    try:
+        score = float(rating)
+        filled = int(round((score / 5.0) * 10))
+        filled = max(0, min(10, filled))
+        bar = "▰" * filled + "▱" * (10 - filled)
+        return f"`[{bar}]` **{score:.1f} / 5.0**"
+    except (ValueError, TypeError):
+        return "`[▱▱▱▱▱▱▱▱▱▱]` **N/A**"
+
+def get_badge(rating, released_year):
+    """تحديد الشارة التفاعلية بناءً على التقييم وسنة الإصدار"""
+    try:
+        score = float(rating)
+        if score >= 4.2:
+            return "🏆 **تحفة أسطورية • MUST PLAY**"
+        elif score >= 3.5:
+            return "💎 **كلاسيكية نادرة • RETRO GEM**"
+    except (ValueError, TypeError):
+        pass
+
+    if released_year and str(released_year).isdigit() and int(released_year) < 2000:
+        return "⌛ **أرشيف التسعينات • 90s CLASSIC**"
+    
+    return "🎮 **لعبة كلاسيكية • RETRO GAME**"
 
 def fetch_random_game():
     """جلب لعبة عشوائية حصرية لمنصات PS1 و PS2"""
@@ -142,10 +182,11 @@ def fetch_random_game():
     return None
 
 def build_game_embed(game):
-    """بناء البطاقة وتصفية البيانات"""
+    """بناء البطاقة وتصفية البيانات وإضافة العناصر البصرية"""
     title = game.get('name', 'لعبة غير معروفة')
     game_image = game.get('background_image', '')
     released = game.get('released', 'غير معروف')
+    released_year = released.split('-')[0] if released and '-' in released else ''
     rating = game.get('rating', 'N/A')
     
     # تصفية أجهزة البلايستيشن
@@ -163,29 +204,38 @@ def build_game_embed(game):
     translated_genres = [GENRES_TRANSLATION.get(g, g) for g in raw_genres]
     genres_str = ", ".join(translated_genres) or "متنوع"
     
-    # جلب النبذة
+    # النبذة ووقت القراءة
     raw_desc = game.get('description_raw') or game.get('description') or ''
     game_desc = translate_description(raw_desc)
+    read_time = max(1, len(game_desc) // 250)
 
+    # العناصر الجمالية البصرية
     selected_color = random.choice(COLOR_PALETTE)
     selected_header = random.choice(HEADER_STYLES)
     selected_icon = random.choice(AUTHOR_ICONS)
+    selected_thumbnail = random.choice(THUMBNAIL_ICONS)
     selected_footer = random.choice(FOOTER_TEXTS)
+    divider = random.choice(DIVIDERS)
     prefix, suffix = random.choice(TITLE_DECORATIONS)
+    
+    badge = get_badge(rating, released_year)
+    rating_bar = generate_rating_bar(rating)
 
     embed = discord.Embed(
         title=f"{prefix}{title.upper()}{suffix}",
-        description=f"📖 **نبذة عن اللعبة:**\n{game_desc}\n\n──────────────────────────────",
+        description=f"{badge}\n{divider}\n📖 **نبذة عن اللعبة:**\n{game_desc}\n\n{divider}",
         color=selected_color
     )
     
     embed.set_author(name=selected_header, icon_url=selected_icon)
+    embed.set_thumbnail(url=selected_thumbnail)
     
     embed.add_field(name="🕹️ المنصات", value=f"`{platforms_str}`", inline=True)
     embed.add_field(name="🎬 المطور", value=f"`{developers}`", inline=True)
     embed.add_field(name="🏷️ التصنيف", value=f"`{genres_str}`", inline=True)
     embed.add_field(name="📅 سنة الإصدار", value=f"`{released}`", inline=True)
-    embed.add_field(name="⭐ التقييم العام", value=f"**{rating} / 5** 🌟", inline=True)
+    embed.add_field(name="⏱️ وقت القراءة", value=f"`{read_time} دقيقة`", inline=True)
+    embed.add_field(name="⭐ التقييم العام", value=rating_bar, inline=False)
     
     if game_image:
         embed.set_image(url=game_image)
@@ -211,7 +261,7 @@ async def on_ready():
     if not send_hourly_game.is_running():
         send_hourly_game.start()
 
-@tasks.loop(minutes=3)
+@tasks.loop(minutes=5)
 async def send_hourly_game():
     try:
         channel = client.get_channel(CHANNEL_ID)
