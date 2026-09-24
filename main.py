@@ -1,6 +1,7 @@
 import os
 import random
 import threading
+import time
 import requests
 import re
 from flask import Flask
@@ -12,15 +13,28 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "PlayStation Archive Bot is Running!"
+    return "PlayStation Archive Bot is Alive and Running!"
 
-def run():
+def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
-    t = threading.Thread(target=run)
+    t = threading.Thread(target=run_flask)
+    t.daemon = True
     t.start()
+
+def self_ping():
+    """دالة تصحي السيرفر كل 4 دقائق تلقائياً لمنع خمول Render"""
+    time.sleep(10) # انتظار تشغيل السيرفر
+    url = "https://ps-bot-fq0t.onrender.com"
+    while True:
+        try:
+            requests.get(url, timeout=10)
+            print("🔄 Self-ping sent successfully!")
+        except Exception as e:
+            print(f"⚠️ Self-ping error: {e}")
+        time.sleep(240) # 4 دقائق (240 ثانية)
 
 # --- المتغيرات الأساسية ---
 TOKEN = os.getenv('BOT_TOKEN')
@@ -90,14 +104,13 @@ def clean_text(text):
     return clean
 
 def translate_description(text):
-    """حاول الترجمة عبر محركات متعددة، وفي حال الفشل يرجع النبذة الأصلية للعبة"""
+    """محاولة الترجمة للغة العربية، وفي حال التعثر يرجع النبذة الأصلية للعبة"""
     cleaned = clean_text(text)
     if not cleaned:
         return "لا توجد نبذة متوفرة لهذه اللعبة."
 
-    short_text = cleaned[:200]
+    short_text = cleaned[:180]
 
-    # المحاولة الأولى: MyMemory Translate
     try:
         url = f"https://api.mymemory.translated.net/get?q={requests.utils.quote(short_text)}&langpair=en|ar"
         res = requests.get(url, timeout=5)
@@ -106,21 +119,8 @@ def translate_description(text):
             if translated and "MYMEMORY WARNING" not in translated and "QUERY LENGTH" not in translated:
                 return translated + "..."
     except Exception as e:
-        print(f"MyMemory error: {e}")
+        print(f"Translation error: {e}")
 
-    # المحاولة الثانية: LibreTranslate
-    try:
-        url_lt = "https://libretranslate.de/translate"
-        payload = {"q": short_text, "source": "en", "target": "ar", "format": "text"}
-        res_lt = requests.post(url_lt, json=payload, timeout=5)
-        if res_lt.status_code == 200:
-            translated = res_lt.json().get("translatedText", "")
-            if translated:
-                return translated + "..."
-    except Exception as e:
-        print(f"LibreTranslate error: {e}")
-
-    # إذا فشلت كل المحركات، يرجع النبذة الإنجليزية الأصلية الخاصة باللعبة نفسها بدلاً من الجمل المكررة!
     return short_text + "..."
 
 def fetch_random_game():
@@ -163,7 +163,7 @@ def build_game_embed(game):
     translated_genres = [GENRES_TRANSLATION.get(g, g) for g in raw_genres]
     genres_str = ", ".join(translated_genres) or "متنوع"
     
-    # جلب النبذة الخاصة باللعبة نفسها
+    # جلب النبذة
     raw_desc = game.get('description_raw') or game.get('description') or ''
     game_desc = translate_description(raw_desc)
 
@@ -213,12 +213,25 @@ async def on_ready():
 
 @tasks.loop(hours=1)
 async def send_hourly_game():
-    channel = client.get_channel(CHANNEL_ID)
-    if channel:
-        game_data = fetch_random_game()
-        if game_data:
-            embed = build_game_embed(game_data)
-            await channel.send(embed=embed)
+    try:
+        channel = client.get_channel(CHANNEL_ID)
+        if channel:
+            game_data = fetch_random_game()
+            if game_data:
+                embed = build_game_embed(game_data)
+                await channel.send(embed=embed)
+    except Exception as e:
+        print(f"⚠️ حدث خطأ وتجاوزه البوت: {e}")
 
+@send_hourly_game.before_loop
+async def before_send_hourly_game():
+    await client.wait_until_ready()
+
+# تشغيل السيرفر الوهمي والدوافع الذاتية
 keep_alive()
+
+ping_thread = threading.Thread(target=self_ping)
+ping_thread.daemon = True
+ping_thread.start()
+
 client.run(TOKEN)
